@@ -1,0 +1,15 @@
+Source: whisper-cpp
+Section: sound
+Priority: optional
+Maintainer: Voxpipe Builders <voxpipe@example.com>
+Build-Depends: debhelper-compat (= 13), cmake, g++, pkg-config, libopenblas-dev
+Standards-Version: 4.7.0
+Homepage: https://github.com/ggml-org/whisper.cpp
+Rules-Requires-Root: no
+
+Package: whisper-cpp
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}, libopenblas0
+Description: Fast C/C++ implementation of OpenAI Whisper
+ whisper.cpp is a fast C/C++ implementation of OpenAI's Whisper ASR model.
+ This package builds whisper.cpp with system OpenBLAS for accelerated inference.

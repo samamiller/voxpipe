@@ -1,0 +1,14 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@ --buildsystem=cmake
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-DGGML_BLAS=ON \
+		-DGGML_BLAS_VENDOR=OpenBLAS \
+		-DWHISPER_BUILD_EXAMPLES=ON \
+		-DWHISPER_BUILD_TESTS=OFF \
+		-DBUILD_SHARED_LIBS=ON
