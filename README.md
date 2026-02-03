@@ -15,6 +15,16 @@ Voxpipe is a Linux-first speech recognition app focused on reliable dictation an
 
 Early stage. This repository currently focuses on packaging `whisper.cpp` and the automation that keeps it up to date.
 
+## Usage (prototype)
+
+Initial prototype script: `scripts/voxpipe.sh`.
+
+Notes:
+- Expects a local `whisper.cpp` build at `~/whisper.cpp` and a quantized model file.
+- Uses PipeWire (`pw-record`) and PulseAudio tools (`pactl`, `paplay`).
+- Copies transcription output to the clipboard (`wl-copy`/`wl-paste`).
+- Bluetooth card/source identifiers are currently hard-coded and should be customized.
+
 ## Packaging
 
 See `packaging/whisper-cpp/README.md` for RPM/DEB build instructions and update workflow details.
