@@ -1,5 +1,5 @@
-whisper-cpp (1.8.2-1) unstable; urgency=medium
+whisper-cpp (1.8.3-1) unstable; urgency=medium
 
-  * Auto-update to upstream release 1.8.2.
+  * Auto-update to upstream release 1.8.3.
 
- -- Voxpipe Builders <voxpipe@example.com>  Mon, 02 Feb 2026 21:54:11 -0700
+ -- Voxpipe Builders <voxpipe@example.com>  Mon, 02 Feb 2026 22:04:18 -0700

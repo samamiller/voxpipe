@@ -5,10 +5,30 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 VERSION_FILE="${ROOT_DIR}/packaging/whisper-cpp/VERSION"
 SHA_FILE="${ROOT_DIR}/packaging/whisper-cpp/SHA256"
 
-LATEST_TAG=$(curl -fsSL https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest | \
-  python3 - <<'PY'
-import json,sys
-print(json.load(sys.stdin)["tag_name"])
+GITHUB_TOKEN_HEADER=()
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  GITHUB_TOKEN_HEADER=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
+
+LATEST_JSON_FILE=$(mktemp)
+trap 'rm -f "${LATEST_JSON_FILE}"' EXIT
+
+curl -fsSL \
+  -H "Accept: application/vnd.github+json" \
+  "${GITHUB_TOKEN_HEADER[@]}" \
+  -o "${LATEST_JSON_FILE}" \
+  https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest
+
+if [[ ! -s "${LATEST_JSON_FILE}" ]]; then
+  echo "Error: empty response from GitHub API." >&2
+  exit 1
+fi
+
+LATEST_TAG=$(python3 - <<PY
+import json
+with open("${LATEST_JSON_FILE}", "r", encoding="utf-8") as f:
+    data = json.load(f)
+print(data["tag_name"])
 PY
 )
 

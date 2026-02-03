@@ -1,5 +1,5 @@
 Name:           whisper-cpp
-Version:        1.8.2
+Version:        1.8.3
 Release:        1%{?dist}
 Summary:        Fast C/C++ implementation of OpenAI Whisper
 
@@ -45,5 +45,5 @@ package builds whisper.cpp with system OpenBLAS for accelerated inference.
 %{_libdir}/pkgconfig/ggml.pc
 
 %changelog
-* Mon Feb 02 2026 Voxpipe Builders <voxpipe@example.com> - 1.8.2-1
-- Auto-update to upstream release 1.8.2
+* Mon Feb 02 2026 Voxpipe Builders <voxpipe@example.com> - 1.8.3-1
+- Auto-update to upstream release 1.8.3
