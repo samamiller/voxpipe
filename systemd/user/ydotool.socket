@@ -1,0 +1,9 @@
+[Unit]
+Description=ydotool socket (user)
+
+[Socket]
+ListenStream=%t/ydotoold/ydotoold.socket
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target

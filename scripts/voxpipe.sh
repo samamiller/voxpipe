@@ -1,8 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WHISPER="$HOME/whisper.cpp/build/bin/whisper-cli"
-MODEL="$HOME/whisper.cpp/models/ggml-base.en-q5_1.bin"
+# Config load order: explicit VOXPIPE_CONFIG, user config, repo config.
+CONFIG_PATHS=(
+  "${VOXPIPE_CONFIG:-}"
+  "${XDG_CONFIG_HOME:-$HOME/.config}/voxpipe/voxpipe.env"
+  "$HOME/.config/voxpipe/voxpipe.env"
+  "$PWD/config/voxpipe.env"
+)
+
+for cfg in "${CONFIG_PATHS[@]}"; do
+  if [[ -n "${cfg}" && -f "${cfg}" ]]; then
+    set +u
+    # shellcheck source=/dev/null
+    . "${cfg}"
+    set -u
+    break
+  fi
+done
+
+WHISPER_REPO="${WHISPER_REPO:-$HOME/whisper.cpp}"
+WHISPER_BIN="${WHISPER_BIN:-$WHISPER_REPO/build/bin/whisper-cli}"
+MODEL_NAME="${MODEL_NAME:-base.en-q5_1}"
+MODEL="${MODEL:-$WHISPER_REPO/models/ggml-${MODEL_NAME}.bin}"
 
 BT_CARD="bluez_card.CC_98_8B_F3_16_31"
 BT_SRC="bluez_input.CC:98:8B:F3:16:31"
@@ -46,8 +66,8 @@ need pw-record
 need wl-copy
 need ffmpeg
 
-[ -x "$WHISPER" ] || die "missing whisper-cli at $WHISPER"
-[ -f "$MODEL" ]   || die "missing model at $MODEL (run: cd ~/whisper.cpp && ./models/download-ggml-model.sh base.en-q5_1)"
+[ -x "$WHISPER_BIN" ] || die "missing whisper-cli at $WHISPER_BIN"
+[ -f "$MODEL" ]   || die "missing model at $MODEL (run: scripts/model-download.sh ${MODEL_NAME})"
 
 # --- Audible beep (force to BT sink if possible) ---
 BEEP_START="/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"
@@ -200,7 +220,7 @@ rm -f "$RAW"
 play_beep "$BEEP_STOP"
 
 echo "[2/4] Transcribing..." | tee -a "$LOG" >&2
-"$WHISPER" \
+"$WHISPER_BIN" \
   -m "$MODEL" \
   -f "$WAV" \
   -t "$THREADS" \
