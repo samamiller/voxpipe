@@ -5,12 +5,24 @@ mod state;
 
 use state::{AppEvent, AppState};
 
+const APP_STYLE: &str = include_str!("../assets/style.css");
+
 fn main() -> glib::ExitCode {
     let app = adw::Application::builder()
         .application_id("io.voxpipe.App")
         .build();
 
     app.connect_activate(|app| {
+        let css_provider = gtk::CssProvider::new();
+        css_provider.load_from_data(APP_STYLE);
+        if let Some(display) = gtk::gdk::Display::default() {
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &css_provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("Voxpipe")
@@ -20,6 +32,7 @@ fn main() -> glib::ExitCode {
             .modal(true)
             .build();
         window.set_resizable(false);
+        window.add_css_class("hud-window");
 
         let container = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -29,36 +42,43 @@ fn main() -> glib::ExitCode {
             .margin_start(12)
             .margin_end(12)
             .build();
+        container.add_css_class("hud-body");
 
         let mic_button = gtk::Button::builder()
             .icon_name("audio-input-microphone-symbolic")
             .tooltip_text("Start listening")
             .build();
+        mic_button.add_css_class("hud-mic");
 
         let status_label = gtk::Label::builder()
             .xalign(0.0)
             .hexpand(false)
             .label("Status: Idle")
             .build();
+        status_label.add_css_class("hud-status");
 
         let meter = gtk::ProgressBar::builder()
             .hexpand(true)
             .show_text(false)
             .fraction(0.0)
             .build();
+        meter.add_css_class("hud-meter");
 
         let right_controls = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(4)
             .build();
+        right_controls.add_css_class("hud-controls");
         let minimize_button = gtk::Button::builder()
             .icon_name("window-minimize-symbolic")
             .tooltip_text("Minimize")
             .build();
+        minimize_button.add_css_class("hud-control");
         let close_button = gtk::Button::builder()
             .icon_name("window-close-symbolic")
             .tooltip_text("Close")
             .build();
+        close_button.add_css_class("hud-control");
         right_controls.append(&minimize_button);
         right_controls.append(&close_button);
 
@@ -85,7 +105,7 @@ fn main() -> glib::ExitCode {
         window.set_content(Some(&container));
 
         let state = Rc::new(RefCell::new(AppState::Idle));
-        apply_state(&state.borrow(), &status_label, &mic_button);
+        apply_state(&state.borrow(), &status_label, &mic_button, &container);
 
         {
             let state = Rc::clone(&state);
@@ -99,7 +119,7 @@ fn main() -> glib::ExitCode {
                 } else {
                     state.borrow().on_event(AppEvent::StartListening)
                 };
-                set_state(&state, next, &status_label, &mic_button_handler);
+                set_state(&state, next, &status_label, &mic_button_handler, &container);
             });
         }
 
@@ -148,18 +168,26 @@ fn set_state(
     next: AppState,
     status_label: &gtk::Label,
     mic_button: &gtk::Button,
+    container: &gtk::Box,
 ) {
     *state.borrow_mut() = next;
-    apply_state(&state.borrow(), status_label, mic_button);
+    apply_state(&state.borrow(), status_label, mic_button, container);
 }
 
-fn apply_state(state: &AppState, status_label: &gtk::Label, mic_button: &gtk::Button) {
+fn apply_state(
+    state: &AppState,
+    status_label: &gtk::Label,
+    mic_button: &gtk::Button,
+    container: &gtk::Box,
+) {
     status_label.set_label(&format!("Status: {}", state.status_text()));
     if matches!(state, AppState::Listening) {
         mic_button.set_icon_name("media-playback-stop-symbolic");
         mic_button.set_tooltip_text(Some("Stop listening"));
+        container.add_css_class("listening");
     } else {
         mic_button.set_icon_name("audio-input-microphone-symbolic");
         mic_button.set_tooltip_text(Some("Start listening"));
+        container.remove_css_class("listening");
     }
 }
