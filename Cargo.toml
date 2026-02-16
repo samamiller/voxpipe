@@ -7,3 +7,4 @@ edition = "2024"
 adw = { package = "libadwaita", version = "0.7" }
 glib = "0.20"
 gtk = { package = "gtk4", version = "0.9" }
+gstreamer = "0.23"

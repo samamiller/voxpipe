@@ -1,8 +1,10 @@
 use adw::prelude::*;
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{cell::RefCell, rc::Rc};
 
+mod audio;
 mod state;
 
+use audio::monitor::Monitor;
 use state::{AppEvent, AppState};
 
 const APP_STYLE: &str = include_str!("../assets/style.css");
@@ -105,41 +107,34 @@ fn main() -> glib::ExitCode {
         window.set_content(Some(&container));
 
         let state = Rc::new(RefCell::new(AppState::Idle));
+        let monitor = Rc::new(RefCell::new(Monitor::new()));
         apply_state(&state.borrow(), &status_label, &mic_button, &container);
 
         {
             let state = Rc::clone(&state);
+            let monitor = Rc::clone(&monitor);
             let status_label = status_label.clone();
+            let meter = meter.clone();
             let mic_button = mic_button.clone();
             let mic_button_handler = mic_button.clone();
+            let container = container.clone();
 
             mic_button.connect_clicked(move |_| {
                 let next = if matches!(*state.borrow(), AppState::Listening) {
+                    monitor.borrow_mut().stop();
+                    meter.set_fraction(0.0);
                     state.borrow().on_event(AppEvent::StopListening)
                 } else {
+                    let meter_for_levels = meter.clone();
+                    if let Err(err) = monitor.borrow_mut().start(move |level| {
+                        meter_for_levels.set_fraction(level as f64);
+                    }) {
+                        status_label.set_label(&format!("Status: Mic error ({err})"));
+                        return;
+                    }
                     state.borrow().on_event(AppEvent::StartListening)
                 };
                 set_state(&state, next, &status_label, &mic_button_handler, &container);
-            });
-        }
-
-        {
-            let state = Rc::clone(&state);
-            let meter = meter.clone();
-            let phase = Rc::new(RefCell::new(0.0_f64));
-            let phase_for_tick = Rc::clone(&phase);
-
-            glib::timeout_add_local(Duration::from_millis(80), move || {
-                if matches!(*state.borrow(), AppState::Listening) {
-                    let mut phase = phase_for_tick.borrow_mut();
-                    *phase += 0.22;
-                    let value = ((*phase).sin() * 0.5 + 0.5) as f64;
-                    meter.set_fraction(value.clamp(0.02, 0.98));
-                } else {
-                    *phase_for_tick.borrow_mut() = 0.0;
-                    meter.set_fraction(0.0);
-                }
-                glib::ControlFlow::Continue
             });
         }
 
