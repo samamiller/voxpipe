@@ -13,7 +13,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=VOXPIPE_WHISPER_BUILD_EXAMPLES");
 
     let ffmpeg_enabled = env_flag("VOXPIPE_WHISPER_FFMPEG").unwrap_or(false);
-    let build_examples = env_flag("VOXPIPE_WHISPER_BUILD_EXAMPLES").unwrap_or(ffmpeg_enabled);
+    let build_examples = env_flag("VOXPIPE_WHISPER_BUILD_EXAMPLES").unwrap_or(true);
 
     if ffmpeg_enabled && !build_examples {
         panic!(

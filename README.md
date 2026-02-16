@@ -66,7 +66,7 @@ This script:
 Optional environment variables:
 - `VOXPIPE_WHISPER_CMAKE_BUILD_TYPE` (default: `Release`)
 - `VOXPIPE_WHISPER_FFMPEG` (default: `0`) enables FFmpeg decode support in `whisper.cpp` example binaries
-- `VOXPIPE_WHISPER_BUILD_EXAMPLES` (default: follows `VOXPIPE_WHISPER_FFMPEG`) controls whether `whisper-cli` and other examples are built
+- `VOXPIPE_WHISPER_BUILD_EXAMPLES` (default: `1`) controls whether `whisper-cli` and other examples are built
 - `VOXPIPE_WHISPER_MODEL` (path used by dev smoke model-load trigger)
 
 Example (build with FFmpeg-enabled `whisper-cli`):

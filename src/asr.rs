@@ -1,4 +1,5 @@
 use std::fmt;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -64,9 +65,14 @@ pub fn transcribe(
 ) -> Result<String, AsrError> {
     let wav_path = wav_path.as_ref();
     let model_path = model_path.as_ref();
-    let bin = whisper_cli_binary();
+    let cli = resolve_whisper_cli();
+    let bin = cli.binary.to_string_lossy().into_owned();
 
-    let mut cmd = Command::new(&bin);
+    let mut cmd = Command::new(&cli.binary);
+    if let Some(lib_dir) = cli.lib_dir {
+        let merged = merge_library_path(&lib_dir);
+        cmd.env("LD_LIBRARY_PATH", merged);
+    }
     cmd.arg("-m")
         .arg(model_path)
         .arg("-f")
@@ -95,8 +101,69 @@ pub fn transcribe(
     Ok(transcript)
 }
 
-pub fn whisper_cli_binary() -> String {
-    std::env::var("VOXPIPE_WHISPER_CLI").unwrap_or_else(|_| "whisper-cli".to_string())
+struct WhisperCliLocation {
+    binary: PathBuf,
+    lib_dir: Option<PathBuf>,
+}
+
+fn resolve_whisper_cli() -> WhisperCliLocation {
+    if let Ok(bin) = std::env::var("VOXPIPE_WHISPER_CLI") {
+        let trimmed = bin.trim();
+        if !trimmed.is_empty() {
+            return WhisperCliLocation {
+                binary: PathBuf::from(trimmed),
+                lib_dir: None,
+            };
+        }
+    }
+
+    if let Some(local) = discover_local_whisper_cli() {
+        return local;
+    }
+
+    WhisperCliLocation {
+        binary: PathBuf::from("whisper-cli"),
+        lib_dir: None,
+    }
+}
+
+fn discover_local_whisper_cli() -> Option<WhisperCliLocation> {
+    let cwd = std::env::current_dir().ok()?;
+    let mut candidates: Vec<(PathBuf, PathBuf, std::time::SystemTime)> = Vec::new();
+
+    for profile in ["debug", "release"] {
+        let build_root = cwd.join("target").join(profile).join("build");
+        let entries = match fs::read_dir(build_root) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let out_dir = entry.path().join("out");
+            let bin = out_dir.join("bin").join("whisper-cli");
+            if !bin.is_file() {
+                continue;
+            }
+            let lib_dir = out_dir.join("lib");
+            let modified = fs::metadata(&bin)
+                .and_then(|meta| meta.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            candidates.push((bin, lib_dir, modified));
+        }
+    }
+
+    candidates.sort_by_key(|(_, _, modified)| std::cmp::Reverse(*modified));
+    candidates.first().map(|(bin, lib_dir, _)| WhisperCliLocation {
+        binary: bin.clone(),
+        lib_dir: Some(lib_dir.clone()),
+    })
+}
+
+fn merge_library_path(prefix: &Path) -> String {
+    let prefix_text = prefix.to_string_lossy().into_owned();
+    match std::env::var("LD_LIBRARY_PATH") {
+        Ok(existing) if !existing.trim().is_empty() => format!("{prefix_text}:{existing}"),
+        _ => prefix_text,
+    }
 }
 
 pub fn discover_model_path() -> Result<PathBuf, AsrError> {
@@ -117,14 +184,19 @@ pub fn discover_model_path() -> Result<PathBuf, AsrError> {
         return Ok(path);
     }
 
+    if let Some(path) = discover_from_directory(&repo_models_dir()) {
+        return Ok(path);
+    }
+
     if let Some(path) = discover_from_directory(&cache_models_dir()) {
         return Ok(path);
     }
 
     Err(AsrError::ModelMissing {
         message: format!(
-            "No Whisper model found via --model, ASR_MODEL, {}, or {}",
+            "No Whisper model found via --model, ASR_MODEL, {}, {}, or {}",
             bundled_models_dir().display(),
+            repo_models_dir().display(),
             cache_models_dir().display()
         ),
         fix_command: default_fix_command(),
@@ -199,6 +271,12 @@ fn bundled_models_dir() -> PathBuf {
     }
 
     PathBuf::from("/usr/share/voxpipe/models")
+}
+
+fn repo_models_dir() -> PathBuf {
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("models")
 }
 
 fn default_fix_command() -> String {
