@@ -8,6 +8,7 @@ pub mod whisper_rs;
 
 use audio::monitor::Monitor;
 use state::{AppEvent, AppState};
+use whisper_rs::WhisperContext;
 
 const APP_STYLE: &str = include_str!("../assets/style.css");
 
@@ -17,6 +18,9 @@ fn main() -> glib::ExitCode {
         .build();
 
     app.connect_activate(|app| {
+        let system_info = whisper_rs::system_info();
+        eprintln!("[whisper] system_info: {system_info}");
+
         let css_provider = gtk::CssProvider::new();
         css_provider.load_from_data(APP_STYLE);
         if let Some(display) = gtk::gdk::Display::default() {
@@ -152,6 +156,45 @@ fn main() -> glib::ExitCode {
             close_button.connect_clicked(move |_| {
                 window.close();
             });
+        }
+
+        {
+            let status_label = status_label.clone();
+            let key_controller = gtk::EventControllerKey::new();
+            key_controller.connect_key_pressed(move |_, key, _, state| {
+                let ctrl_shift = state.contains(gtk::gdk::ModifierType::CONTROL_MASK)
+                    && state.contains(gtk::gdk::ModifierType::SHIFT_MASK);
+                let dev_shortcut = key == gtk::gdk::Key::W || key == gtk::gdk::Key::w;
+                if !(ctrl_shift && dev_shortcut) {
+                    return glib::Propagation::Proceed;
+                }
+
+                let model_path = match std::env::var("VOXPIPE_WHISPER_MODEL") {
+                    Ok(path) if !path.trim().is_empty() => path,
+                    _ => {
+                        status_label.set_label(
+                            "Status: Whisper smoke failed (set VOXPIPE_WHISPER_MODEL)",
+                        );
+                        return glib::Propagation::Stop;
+                    }
+                };
+
+                match WhisperContext::new(&model_path) {
+                    Ok(ctx) => {
+                        drop(ctx);
+                        status_label.set_label("Status: Whisper smoke ok");
+                        eprintln!("[whisper] smoke context init succeeded: {model_path}");
+                    }
+                    Err(err) => {
+                        status_label
+                            .set_label(&format!("Status: Whisper smoke failed ({err})"));
+                        eprintln!("[whisper] smoke context init failed: {err}");
+                    }
+                }
+
+                glib::Propagation::Stop
+            });
+            window.add_controller(key_controller);
         }
 
         window.present();
