@@ -3,10 +3,11 @@ use std::{
     cell::RefCell,
     path::PathBuf,
     rc::Rc,
-    time::Duration,
+    sync::mpsc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+mod asr;
 mod audio;
 mod state;
 pub mod whisper_rs;
@@ -122,40 +123,104 @@ fn main() -> glib::ExitCode {
 
         let state = Rc::new(RefCell::new(AppState::Idle));
         let recorder = Rc::new(RefCell::new(Recorder::new()));
-        let last_recording = Rc::new(RefCell::new(None::<PathBuf>));
         apply_state(&state.borrow(), &status_label, &mic_button, &container);
 
         {
             let state = Rc::clone(&state);
             let recorder = Rc::clone(&recorder);
-            let last_recording = Rc::clone(&last_recording);
             let status_label = status_label.clone();
             let meter = meter.clone();
             let mic_button = mic_button.clone();
             let mic_button_handler = mic_button.clone();
             let container = container.clone();
 
-            mic_button.connect_clicked(move |_| {
-                let next = if matches!(*state.borrow(), AppState::Listening) {
+            mic_button.connect_clicked(move |_| match *state.borrow() {
+                AppState::Listening => {
                     let maybe_path = recorder.borrow_mut().stop();
-                    if let Some(path) = maybe_path {
+                    let wav_path = if let Some(path) = maybe_path {
                         eprintln!("[audio] saved recording: {}", path.display());
-                        *last_recording.borrow_mut() = Some(path.clone());
-                        let state_done = Rc::clone(&state);
-                        let status_done = status_label.clone();
-                        let mic_done = mic_button_handler.clone();
-                        let container_done = container.clone();
-                        glib::timeout_add_local_once(Duration::from_millis(100), move || {
-                            let idle = state_done.borrow().on_event(AppEvent::TranscriptionReady);
-                            set_state(&state_done, idle, &status_done, &mic_done, &container_done);
-                        });
+                        path
                     } else {
                         status_label.set_label("Status: Recording stop failed (no WAV path)");
                         return;
-                    }
+                    };
+
                     meter.set_fraction(0.0);
-                    state.borrow().on_event(AppEvent::StopListening)
-                } else {
+                    let next = state.borrow().on_event(AppEvent::StopListening);
+                    set_state(&state, next, &status_label, &mic_button_handler, &container);
+
+                    let model_path = match asr::model_path_from_env_or_args() {
+                        Some(path) => path,
+                        None => {
+                            status_label.set_label(
+                                "Status: Transcription skipped (set ASR_MODEL or --model)",
+                            );
+                            let idle = state.borrow().on_event(AppEvent::TranscriptionReady);
+                            set_state(&state, idle, &status_label, &mic_button_handler, &container);
+                            return;
+                        }
+                    };
+
+                    let (tx, rx) = mpsc::channel::<Result<String, String>>();
+                    std::thread::spawn(move || {
+                        let result = asr::transcribe(&wav_path, &model_path, &["-nt"])
+                            .map_err(|err| err.to_string());
+                        let _ = tx.send(result);
+                    });
+
+                    let state_done = Rc::clone(&state);
+                    let status_done = status_label.clone();
+                    let mic_done = mic_button_handler.clone();
+                    let container_done = container.clone();
+                    glib::timeout_add_local(
+                        std::time::Duration::from_millis(100),
+                        move || match rx.try_recv() {
+                            Ok(Ok(text)) => {
+                                eprintln!("[asr] transcript:\n{text}");
+                                status_done.set_label("Status: Transcribed");
+                                let idle =
+                                    state_done.borrow().on_event(AppEvent::TranscriptionReady);
+                                set_state(
+                                    &state_done,
+                                    idle,
+                                    &status_done,
+                                    &mic_done,
+                                    &container_done,
+                                );
+                                glib::ControlFlow::Break
+                            }
+                            Ok(Err(err)) => {
+                                status_done.set_label(&format!("Status: ASR error ({err})"));
+                                eprintln!("[asr] transcription failed: {err}");
+                                let idle =
+                                    state_done.borrow().on_event(AppEvent::TranscriptionReady);
+                                set_state(
+                                    &state_done,
+                                    idle,
+                                    &status_done,
+                                    &mic_done,
+                                    &container_done,
+                                );
+                                glib::ControlFlow::Break
+                            }
+                            Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                            Err(mpsc::TryRecvError::Disconnected) => {
+                                status_done.set_label("Status: ASR worker disconnected");
+                                let idle =
+                                    state_done.borrow().on_event(AppEvent::TranscriptionReady);
+                                set_state(
+                                    &state_done,
+                                    idle,
+                                    &status_done,
+                                    &mic_done,
+                                    &container_done,
+                                );
+                                glib::ControlFlow::Break
+                            }
+                        },
+                    );
+                }
+                AppState::Idle => {
                     let meter_for_levels = meter.clone();
                     let wav_path = next_wav_path();
                     if let Err(err) = recorder.borrow_mut().start(&wav_path, move |level| {
@@ -164,9 +229,12 @@ fn main() -> glib::ExitCode {
                         status_label.set_label(&format!("Status: Mic error ({err})"));
                         return;
                     }
-                    state.borrow().on_event(AppEvent::StartListening)
-                };
-                set_state(&state, next, &status_label, &mic_button_handler, &container);
+                    let next = state.borrow().on_event(AppEvent::StartListening);
+                    set_state(&state, next, &status_label, &mic_button_handler, &container);
+                }
+                AppState::Transcribing => {
+                    status_label.set_label("Status: Transcribing (please wait)");
+                }
             });
         }
 
