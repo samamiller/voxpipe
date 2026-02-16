@@ -13,13 +13,16 @@ fn main() {
     let openblas = pkg_config::Config::new()
         .cargo_metadata(false)
         .probe("openblas64")
-        .or_else(|_| pkg_config::Config::new().cargo_metadata(false).probe("openblas"))
+        .or_else(|_| {
+            pkg_config::Config::new()
+                .cargo_metadata(false)
+                .probe("openblas")
+        })
         .expect("system OpenBLAS not found via pkg-config (openblas64/openblas)");
 
     let mut cfg = cmake::Config::new("vendor");
     cfg.profile(
-        &env::var("VOXPIPE_WHISPER_CMAKE_BUILD_TYPE")
-            .unwrap_or_else(|_| "Release".to_string()),
+        &env::var("VOXPIPE_WHISPER_CMAKE_BUILD_TYPE").unwrap_or_else(|_| "Release".to_string()),
     );
 
     cfg.define("BUILD_SHARED_LIBS", "ON")
@@ -80,8 +83,8 @@ fn main() {
         .expect("unable to write whisper bindings");
 
     // Rust 2024 requires `unsafe extern` blocks.
-    let generated = fs::read_to_string(&bindings_path)
-        .expect("unable to read generated whisper bindings");
+    let generated =
+        fs::read_to_string(&bindings_path).expect("unable to read generated whisper bindings");
     let patched = generated.replace("extern \"C\" {", "unsafe extern \"C\" {");
     fs::write(&bindings_path, patched).expect("unable to patch generated whisper bindings");
 }

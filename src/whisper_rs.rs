@@ -15,11 +15,21 @@ pub enum WhisperError {
 impl fmt::Display for WhisperError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ModelPathNotUtf8(path) => write!(f, "model path is not valid UTF-8: {}", path.display()),
-            Self::ModelPathContainsNul(path) => {
-                write!(f, "model path contains interior NUL bytes: {}", path.display())
+            Self::ModelPathNotUtf8(path) => {
+                write!(f, "model path is not valid UTF-8: {}", path.display())
             }
-            Self::ContextInitFailed(path) => write!(f, "failed to initialize whisper context: {}", path.display()),
+            Self::ModelPathContainsNul(path) => {
+                write!(
+                    f,
+                    "model path contains interior NUL bytes: {}",
+                    path.display()
+                )
+            }
+            Self::ContextInitFailed(path) => write!(
+                f,
+                "failed to initialize whisper context: {}",
+                path.display()
+            ),
         }
     }
 }
@@ -35,7 +45,9 @@ pub fn system_info() -> String {
     }
 
     // SAFETY: pointer is expected to reference a valid C string for the process lifetime.
-    unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned()
+    unsafe { CStr::from_ptr(ptr) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 pub struct WhisperContext {

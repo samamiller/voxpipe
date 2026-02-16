@@ -1,12 +1,17 @@
 use adw::prelude::*;
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    path::PathBuf,
+    rc::Rc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 mod audio;
 mod state;
-mod whisper_sys;
 pub mod whisper_rs;
+mod whisper_sys;
 
-use audio::monitor::Monitor;
+use audio::record::Recorder;
 use state::{AppEvent, AppState};
 use whisper_rs::WhisperContext;
 
@@ -102,7 +107,9 @@ fn main() -> glib::ExitCode {
                 let button = gesture.current_button() as i32;
                 let timestamp = gesture.current_event_time();
 
-                if let (Some(device), Some(surface)) = (gesture.current_event_device(), window.surface()) {
+                if let (Some(device), Some(surface)) =
+                    (gesture.current_event_device(), window.surface())
+                {
                     if let Ok(toplevel) = surface.dynamic_cast::<gtk::gdk::Toplevel>() {
                         toplevel.begin_move(&device, button, x, y, timestamp);
                     }
@@ -113,12 +120,12 @@ fn main() -> glib::ExitCode {
         window.set_content(Some(&container));
 
         let state = Rc::new(RefCell::new(AppState::Idle));
-        let monitor = Rc::new(RefCell::new(Monitor::new()));
+        let recorder = Rc::new(RefCell::new(Recorder::new()));
         apply_state(&state.borrow(), &status_label, &mic_button, &container);
 
         {
             let state = Rc::clone(&state);
-            let monitor = Rc::clone(&monitor);
+            let recorder = Rc::clone(&recorder);
             let status_label = status_label.clone();
             let meter = meter.clone();
             let mic_button = mic_button.clone();
@@ -127,13 +134,16 @@ fn main() -> glib::ExitCode {
 
             mic_button.connect_clicked(move |_| {
                 let next = if matches!(*state.borrow(), AppState::Listening) {
-                    monitor.borrow_mut().stop();
+                    if let Some(path) = recorder.borrow_mut().stop() {
+                        eprintln!("[audio] saved recording: {}", path.display());
+                    }
                     meter.set_fraction(0.0);
                     state.borrow().on_event(AppEvent::StopListening)
                 } else {
                     let meter_for_levels = meter.clone();
-                    if let Err(err) = monitor.borrow_mut().start(move |level| {
-                        meter_for_levels.set_fraction(level as f64);
+                    let wav_path = next_wav_path();
+                    if let Err(err) = recorder.borrow_mut().start(&wav_path, move |level| {
+                        meter_for_levels.set_fraction(level as f64)
                     }) {
                         status_label.set_label(&format!("Status: Mic error ({err})"));
                         return;
@@ -172,9 +182,8 @@ fn main() -> glib::ExitCode {
                 let model_path = match std::env::var("VOXPIPE_WHISPER_MODEL") {
                     Ok(path) if !path.trim().is_empty() => path,
                     _ => {
-                        status_label.set_label(
-                            "Status: Whisper smoke failed (set VOXPIPE_WHISPER_MODEL)",
-                        );
+                        status_label
+                            .set_label("Status: Whisper smoke failed (set VOXPIPE_WHISPER_MODEL)");
                         return glib::Propagation::Stop;
                     }
                 };
@@ -186,8 +195,7 @@ fn main() -> glib::ExitCode {
                         eprintln!("[whisper] smoke context init succeeded: {model_path}");
                     }
                     Err(err) => {
-                        status_label
-                            .set_label(&format!("Status: Whisper smoke failed ({err})"));
+                        status_label.set_label(&format!("Status: Whisper smoke failed ({err})"));
                         eprintln!("[whisper] smoke context init failed: {err}");
                     }
                 }
@@ -230,4 +238,11 @@ fn apply_state(
         mic_button.set_tooltip_text(Some("Start listening"));
         container.remove_css_class("listening");
     }
+}
+
+fn next_wav_path() -> PathBuf {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |dur| dur.as_millis());
+    std::env::temp_dir().join(format!("voxpipe-{ts}.wav"))
 }
