@@ -149,12 +149,11 @@ fn main() -> glib::ExitCode {
                     let next = state.borrow().on_event(AppEvent::StopListening);
                     set_state(&state, next, &status_label, &mic_button_handler, &container);
 
-                    let model_path = match asr::model_path_from_env_or_args() {
-                        Some(path) => path,
-                        None => {
-                            status_label.set_label(
-                                "Status: Transcription skipped (set ASR_MODEL or --model)",
-                            );
+                    let model_path = match asr::discover_model_path() {
+                        Ok(path) => path,
+                        Err(err) => {
+                            status_label.set_label(&format!("Status: {err}"));
+                            eprintln!("[asr] model discovery failed: {err}");
                             let idle = state.borrow().on_event(AppEvent::TranscriptionReady);
                             set_state(&state, idle, &status_label, &mic_button_handler, &container);
                             return;

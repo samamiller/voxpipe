@@ -2,6 +2,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+const DEFAULT_MODEL_NAME: &str = "ggml-tiny.en.bin";
+
 #[derive(Debug)]
 pub enum AsrError {
     WhisperCliNotFound(String),
@@ -12,6 +14,10 @@ pub enum AsrError {
     },
     EmptyTranscript {
         stderr: String,
+    },
+    ModelMissing {
+        message: String,
+        fix_command: String,
     },
 }
 
@@ -40,6 +46,10 @@ impl fmt::Display for AsrError {
                     stderr.trim()
                 )
             }
+            Self::ModelMissing {
+                message,
+                fix_command,
+            } => write!(f, "{message}\nFix: {fix_command}"),
         }
     }
 }
@@ -88,15 +98,57 @@ pub fn whisper_cli_binary() -> String {
     std::env::var("VOXPIPE_WHISPER_CLI").unwrap_or_else(|_| "whisper-cli".to_string())
 }
 
-pub fn model_path_from_env_or_args() -> Option<PathBuf> {
+pub fn discover_model_path() -> Result<PathBuf, AsrError> {
+    let args: Vec<String> = std::env::args().collect();
+    let cli_model = parse_model_from_args(&args);
+    if let Some(path) = cli_model {
+        return ensure_model_exists(path, "CLI --model");
+    }
+
     if let Ok(path) = std::env::var("ASR_MODEL") {
         let trimmed = path.trim();
         if !trimmed.is_empty() {
-            return Some(PathBuf::from(trimmed));
+            return ensure_model_exists(PathBuf::from(trimmed), "ASR_MODEL");
         }
     }
 
-    let args: Vec<String> = std::env::args().collect();
+    if let Some(path) = discover_from_directory(&cache_models_dir()) {
+        return Ok(path);
+    }
+
+    if let Some(path) = discover_from_directory(&PathBuf::from("/usr/share/asr-hud/models")) {
+        return Ok(path);
+    }
+
+    Err(AsrError::ModelMissing {
+        message: format!(
+            "No Whisper model found via --model, ASR_MODEL, {}, or /usr/share/asr-hud/models",
+            cache_models_dir().display()
+        ),
+        fix_command: format!(
+            "scripts/fetch-model.sh tiny.en && export ASR_MODEL=\"{}/{}\"",
+            cache_models_dir().display(),
+            DEFAULT_MODEL_NAME
+        ),
+    })
+}
+
+fn ensure_model_exists(path: PathBuf, source: &str) -> Result<PathBuf, AsrError> {
+    if path.is_file() {
+        return Ok(path);
+    }
+
+    Err(AsrError::ModelMissing {
+        message: format!("{source} points to missing model file: {}", path.display()),
+        fix_command: format!(
+            "scripts/fetch-model.sh tiny.en && export ASR_MODEL=\"{}/{}\"",
+            cache_models_dir().display(),
+            DEFAULT_MODEL_NAME
+        ),
+    })
+}
+
+fn parse_model_from_args(args: &[String]) -> Option<PathBuf> {
     let mut idx = 0usize;
     while idx + 1 < args.len() {
         if args[idx] == "--model" {
@@ -107,8 +159,41 @@ pub fn model_path_from_env_or_args() -> Option<PathBuf> {
         }
         idx += 1;
     }
-
     None
+}
+
+fn discover_from_directory(dir: &Path) -> Option<PathBuf> {
+    let preferred = dir.join(DEFAULT_MODEL_NAME);
+    if preferred.is_file() {
+        return Some(preferred);
+    }
+
+    let mut candidates: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.starts_with("ggml-") && name.ends_with(".bin"))
+                .unwrap_or(false)
+        })
+        .collect();
+    candidates.sort();
+    candidates.into_iter().next()
+}
+
+fn cache_models_dir() -> PathBuf {
+    if let Ok(path) = std::env::var("ASR_HUD_MODELS_DIR") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".cache/asr-hud/models")
 }
 
 fn extract_transcript(stdout: &str) -> String {
@@ -124,7 +209,7 @@ fn extract_transcript(stdout: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{transcribe, AsrError};
+    use super::{AsrError, discover_from_directory, transcribe};
     use std::error::Error;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -178,6 +263,22 @@ mod tests {
                 }
             }
             _ => return Err("unexpected error type".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn discover_prefers_default_model_name() -> Result<(), Box<dyn Error>> {
+        let dir = std::env::temp_dir().join("voxpipe-asr-model-discovery");
+        fs::create_dir_all(&dir)?;
+        let other = dir.join("ggml-base.en.bin");
+        let default = dir.join("ggml-tiny.en.bin");
+        fs::write(&other, "x")?;
+        fs::write(&default, "x")?;
+
+        let path = discover_from_directory(&dir).ok_or("expected model path")?;
+        if path != default {
+            return Err("expected default tiny model preference".into());
         }
         Ok(())
     }
