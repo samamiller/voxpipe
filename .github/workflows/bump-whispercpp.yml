@@ -1,0 +1,106 @@
+name: Bump whisper.cpp subtree (weekly)
+
+on:
+  schedule:
+    # Mondays 09:00 America/Denver ~= 16:00 UTC (standard), 15:00 UTC (daylight)
+    # GitHub Actions uses UTC; pick a stable time.
+    - cron: "0 16 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history needed for subtree)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Check upstream latest tag and bump if needed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_REPO: ggml-org/whisper.cpp
+          UPSTREAM_URL: https://github.com/ggml-org/whisper.cpp.git
+          REMOTE_NAME: whispercpp
+          PREFIX: vendor/whisper.cpp
+        run: |
+          set -euo pipefail
+
+          # Ensure pins exist
+          mkdir -p vendor
+          test -f vendor/whisper.cpp.tag || echo "" > vendor/whisper.cpp.tag
+          test -f vendor/whisper.cpp.commit || echo "" > vendor/whisper.cpp.commit
+
+          CURRENT_TAG="$(cat vendor/whisper.cpp.tag | tr -d '[:space:]')"
+
+          # Fetch the latest upstream tag (prefers tags that look like vX.Y[.Z])
+          # This sorts tags by version and picks the highest.
+          LATEST_TAG="$(
+            git ls-remote --tags --refs "${UPSTREAM_URL}" "v*" \
+              | awk '{print $2}' \
+              | sed 's#refs/tags/##' \
+              | sort -V \
+              | tail -n 1
+          )"
+
+          if [ -z "${LATEST_TAG}" ]; then
+            echo "No v* tags found upstream; exiting."
+            exit 0
+          fi
+
+          echo "Current tag: ${CURRENT_TAG}"
+          echo "Latest tag:  ${LATEST_TAG}"
+
+          if [ "${CURRENT_TAG}" = "${LATEST_TAG}" ]; then
+            echo "Already up to date. No action."
+            exit 0
+          fi
+
+          # Create/update remote
+          if ! git remote get-url "${REMOTE_NAME}" >/dev/null 2>&1; then
+            git remote add "${REMOTE_NAME}" "${UPSTREAM_URL}"
+          fi
+          git fetch "${REMOTE_NAME}" --tags
+
+          BRANCH="chore/bump-whispercpp-${LATEST_TAG}"
+          git switch -c "${BRANCH}"
+
+          # If subtree not present yet, fail (this workflow is for bumping)
+          if ! git rev-parse "HEAD:${PREFIX}" >/dev/null 2>&1; then
+            echo "ERROR: subtree path ${PREFIX} not present in HEAD."
+            echo "Run initial 'git subtree add' once, commit it, then retry."
+            exit 1
+          fi
+
+          # Bump subtree
+          git subtree pull --prefix="${PREFIX}" "${REMOTE_NAME}" "${LATEST_TAG}" --squash
+
+          # Update pin files
+          NEW_COMMIT="$(git rev-parse "${LATEST_TAG}")"
+          echo "${LATEST_TAG}" > vendor/whisper.cpp.tag
+          echo "${NEW_COMMIT}" > vendor/whisper.cpp.commit
+          git add vendor/whisper.cpp.tag vendor/whisper.cpp.commit
+
+          # Commit pin file updates if needed
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(vendor): record whisper.cpp pin ${LATEST_TAG}"
+          fi
+
+          # Push branch
+          git push -u origin "${BRANCH}"
+
+          # Create PR (idempotent-ish: if PR exists, this will fail; that's okay)
+          gh pr create \
+            --title "Bump whisper.cpp to ${LATEST_TAG}" \
+            --body "Automated weekly bump of vendored whisper.cpp subtree to upstream tag **${LATEST_TAG}**.\n\n- Updated subtree at \`${PREFIX}\`\n- Updated pin files: \`vendor/whisper.cpp.tag\`, \`vendor/whisper.cpp.commit\`" \
+            --base "${GITHUB_REF_NAME}" \
+            --head "${BRANCH}" || true
