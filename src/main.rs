@@ -1,5 +1,5 @@
 use adw::prelude::*;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 mod state;
 
@@ -22,32 +22,50 @@ fn main() -> glib::ExitCode {
         window.set_resizable(false);
 
         let container = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(12)
-            .margin_top(24)
-            .margin_bottom(24)
-            .margin_start(24)
-            .margin_end(24)
-            .build();
-
-        let status_label = gtk::Label::builder().xalign(0.0).build();
-        let listen_button = gtk::Button::with_label("Listen");
-        let stop_button = gtk::Button::with_label("Stop");
-        let fail_button = gtk::Button::with_label("Simulate Error");
-        let reset_button = gtk::Button::with_label("Reset Error");
-
-        let controls = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
-            .spacing(8)
+            .spacing(12)
+            .margin_top(10)
+            .margin_bottom(10)
+            .margin_start(12)
+            .margin_end(12)
             .build();
-        controls.append(&listen_button);
-        controls.append(&stop_button);
-        controls.append(&fail_button);
-        controls.append(&reset_button);
 
+        let mic_button = gtk::Button::builder()
+            .icon_name("audio-input-microphone-symbolic")
+            .tooltip_text("Start listening")
+            .build();
+
+        let status_label = gtk::Label::builder()
+            .xalign(0.0)
+            .hexpand(false)
+            .label("Status: Idle")
+            .build();
+
+        let meter = gtk::ProgressBar::builder()
+            .hexpand(true)
+            .show_text(false)
+            .fraction(0.0)
+            .build();
+
+        let right_controls = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(4)
+            .build();
+        let minimize_button = gtk::Button::builder()
+            .icon_name("window-minimize-symbolic")
+            .tooltip_text("Minimize")
+            .build();
+        let close_button = gtk::Button::builder()
+            .icon_name("window-close-symbolic")
+            .tooltip_text("Close")
+            .build();
+        right_controls.append(&minimize_button);
+        right_controls.append(&close_button);
+
+        container.append(&mic_button);
         container.append(&status_label);
-        container.append(&controls);
-        window.set_content(Some(&container));
+        container.append(&meter);
+        container.append(&right_controls);
 
         let drag_gesture = gtk::GestureClick::builder().button(0).build();
         {
@@ -64,141 +82,58 @@ fn main() -> glib::ExitCode {
             });
         }
         container.add_controller(drag_gesture);
+        window.set_content(Some(&container));
 
         let state = Rc::new(RefCell::new(AppState::Idle));
-        apply_state(
-            &state.borrow(),
-            &status_label,
-            &listen_button,
-            &stop_button,
-            &fail_button,
-            &reset_button,
-        );
+        apply_state(&state.borrow(), &status_label, &mic_button);
 
         {
             let state = Rc::clone(&state);
             let status_label = status_label.clone();
-            let listen_button = listen_button.clone();
-            let listen_button_handler = listen_button.clone();
-            let stop_button = stop_button.clone();
-            let fail_button = fail_button.clone();
-            let reset_button = reset_button.clone();
+            let mic_button = mic_button.clone();
+            let mic_button_handler = mic_button.clone();
 
-            listen_button.connect_clicked(move |_| {
-                let next = state.borrow().on_event(AppEvent::StartListening);
-                set_state(
-                    &state,
-                    next,
-                    &status_label,
-                    &listen_button_handler,
-                    &stop_button,
-                    &fail_button,
-                    &reset_button,
-                );
+            mic_button.connect_clicked(move |_| {
+                let next = if matches!(*state.borrow(), AppState::Listening) {
+                    state.borrow().on_event(AppEvent::StopListening)
+                } else {
+                    state.borrow().on_event(AppEvent::StartListening)
+                };
+                set_state(&state, next, &status_label, &mic_button_handler);
             });
         }
 
         {
             let state = Rc::clone(&state);
-            let status_label = status_label.clone();
-            let listen_button = listen_button.clone();
-            let stop_button = stop_button.clone();
-            let stop_button_handler = stop_button.clone();
-            let fail_button = fail_button.clone();
-            let reset_button = reset_button.clone();
+            let meter = meter.clone();
+            let phase = Rc::new(RefCell::new(0.0_f64));
+            let phase_for_tick = Rc::clone(&phase);
 
-            stop_button.connect_clicked(move |_| {
-                let next = state.borrow().on_event(AppEvent::StopListening);
-                set_state(
-                    &state,
-                    next,
-                    &status_label,
-                    &listen_button,
-                    &stop_button_handler,
-                    &fail_button,
-                    &reset_button,
-                );
-
-                let next = state.borrow().on_event(AppEvent::BeginTranscription);
-                set_state(
-                    &state,
-                    next,
-                    &status_label,
-                    &listen_button,
-                    &stop_button_handler,
-                    &fail_button,
-                    &reset_button,
-                );
-
-                let state_timeout = Rc::clone(&state);
-                let status_label_timeout = status_label.clone();
-                let listen_button_timeout = listen_button.clone();
-                let stop_button_timeout = stop_button_handler.clone();
-                let fail_button_timeout = fail_button.clone();
-                let reset_button_timeout = reset_button.clone();
-
-                glib::timeout_add_seconds_local_once(1, move || {
-                    let next = state_timeout
-                        .borrow()
-                        .on_event(AppEvent::TranscriptionFinished);
-                    set_state(
-                        &state_timeout,
-                        next,
-                        &status_label_timeout,
-                        &listen_button_timeout,
-                        &stop_button_timeout,
-                        &fail_button_timeout,
-                        &reset_button_timeout,
-                    );
-                });
+            glib::timeout_add_local(Duration::from_millis(80), move || {
+                if matches!(*state.borrow(), AppState::Listening) {
+                    let mut phase = phase_for_tick.borrow_mut();
+                    *phase += 0.22;
+                    let value = ((*phase).sin() * 0.5 + 0.5) as f64;
+                    meter.set_fraction(value.clamp(0.02, 0.98));
+                } else {
+                    *phase_for_tick.borrow_mut() = 0.0;
+                    meter.set_fraction(0.0);
+                }
+                glib::ControlFlow::Continue
             });
         }
 
         {
-            let state = Rc::clone(&state);
-            let status_label = status_label.clone();
-            let listen_button = listen_button.clone();
-            let stop_button = stop_button.clone();
-            let fail_button = fail_button.clone();
-            let fail_button_handler = fail_button.clone();
-            let reset_button = reset_button.clone();
-
-            fail_button.connect_clicked(move |_| {
-                let next = state
-                    .borrow()
-                    .on_event(AppEvent::Fail("Mock failure".to_string()));
-                set_state(
-                    &state,
-                    next,
-                    &status_label,
-                    &listen_button,
-                    &stop_button,
-                    &fail_button_handler,
-                    &reset_button,
-                );
+            let window = window.clone();
+            minimize_button.connect_clicked(move |_| {
+                window.minimize();
             });
         }
 
         {
-            let state = Rc::clone(&state);
-            let status_label = status_label.clone();
-            let listen_button = listen_button.clone();
-            let stop_button = stop_button.clone();
-            let fail_button = fail_button.clone();
-            let reset_button = reset_button.clone();
-            let reset_button_handler = reset_button.clone();
-
-            reset_button.connect_clicked(move |_| {
-                let next = state.borrow().on_event(AppEvent::Reset);
-                set_state(
-                    &state,
-                    next,
-                    &status_label,
-                    &listen_button,
-                    &stop_button,
-                    &fail_button,
-                    &reset_button_handler,
-                );
+            let window = window.clone();
+            close_button.connect_clicked(move |_| {
+                window.close();
             });
         }
 
@@ -212,33 +147,19 @@ fn set_state(
     state: &Rc<RefCell<AppState>>,
     next: AppState,
     status_label: &gtk::Label,
-    listen_button: &gtk::Button,
-    stop_button: &gtk::Button,
-    fail_button: &gtk::Button,
-    reset_button: &gtk::Button,
+    mic_button: &gtk::Button,
 ) {
     *state.borrow_mut() = next;
-    apply_state(
-        &state.borrow(),
-        status_label,
-        listen_button,
-        stop_button,
-        fail_button,
-        reset_button,
-    );
+    apply_state(&state.borrow(), status_label, mic_button);
 }
 
-fn apply_state(
-    state: &AppState,
-    status_label: &gtk::Label,
-    listen_button: &gtk::Button,
-    stop_button: &gtk::Button,
-    fail_button: &gtk::Button,
-    reset_button: &gtk::Button,
-) {
+fn apply_state(state: &AppState, status_label: &gtk::Label, mic_button: &gtk::Button) {
     status_label.set_label(&format!("Status: {}", state.status_text()));
-    listen_button.set_sensitive(state.can_start_listening());
-    stop_button.set_sensitive(state.can_stop_listening());
-    fail_button.set_sensitive(!matches!(state, AppState::Transcribing));
-    reset_button.set_sensitive(state.can_reset());
+    if matches!(state, AppState::Listening) {
+        mic_button.set_icon_name("media-playback-stop-symbolic");
+        mic_button.set_tooltip_text(Some("Stop listening"));
+    } else {
+        mic_button.set_icon_name("audio-input-microphone-symbolic");
+        mic_button.set_tooltip_text(Some("Start listening"));
+    }
 }
