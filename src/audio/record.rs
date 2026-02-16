@@ -79,9 +79,9 @@ fn build_record_pipeline(wav_path: &Path) -> Result<gst::Pipeline, String> {
         .build()
         .map_err(|_| "failed to create wavenc".to_string())?;
     let sink = gst::ElementFactory::make("filesink")
+        .property("location", wav_path_str)
         .build()
-        .map_err(|_| "failed to create filesink".to_string())?;
-    sink.set_property("location", wav_path_str);
+        .map_err(|err| format!("failed to create filesink: {err}"))?;
 
     pipeline
         .add_many([&src, &convert, &resample, &wavenc, &sink])
@@ -107,10 +107,10 @@ where
         .build()
         .map_err(|_| "failed to create audioresample".to_string())?;
     let level = gst::ElementFactory::make("level")
+        .property("interval", 100_000_000u64)
+        .property("post-messages", true)
         .build()
-        .map_err(|_| "failed to create level".to_string())?;
-    level.set_property("interval", 100_000_000i64);
-    level.set_property("post-messages", true);
+        .map_err(|err| format!("failed to create level: {err}"))?;
     let sink = gst::ElementFactory::make("fakesink")
         .build()
         .map_err(|_| "failed to create fakesink".to_string())?;

@@ -44,7 +44,7 @@ fn main() -> glib::ExitCode {
             .default_width(420)
             .default_height(72)
             .decorated(false)
-            .modal(true)
+            .modal(false)
             .build();
         window.set_resizable(false);
         window.add_css_class("hud-window");
@@ -104,10 +104,24 @@ fn main() -> glib::ExitCode {
 
         let drag_gesture = gtk::GestureClick::builder().button(0).build();
         {
+            let container = container.clone();
             let window = window.clone();
             drag_gesture.connect_pressed(move |gesture, _, x, y| {
                 let button = gesture.current_button() as i32;
                 let timestamp = gesture.current_event_time();
+                let on_control = container
+                    .pick(x, y, gtk::PickFlags::DEFAULT)
+                    .map(|widget| {
+                        widget.is::<gtk::Button>()
+                            || widget
+                                .ancestor(gtk::Button::static_type())
+                                .is_some()
+                    })
+                    .unwrap_or(false);
+
+                if on_control {
+                    return;
+                }
 
                 if let (Some(device), Some(surface)) =
                     (gesture.current_event_device(), window.surface())
@@ -134,8 +148,10 @@ fn main() -> glib::ExitCode {
             let mic_button_handler = mic_button.clone();
             let container = container.clone();
 
-            mic_button.connect_clicked(move |_| match *state.borrow() {
-                AppState::Listening => {
+            mic_button.connect_clicked(move |_| {
+                let current_state = state.borrow().clone();
+                match current_state {
+                    AppState::Listening => {
                     let maybe_path = recorder.borrow_mut().stop();
                     let wav_path = if let Some(path) = maybe_path {
                         eprintln!("[audio] saved recording: {}", path.display());
@@ -219,20 +235,21 @@ fn main() -> glib::ExitCode {
                         },
                     );
                 }
-                AppState::Idle => {
-                    let meter_for_levels = meter.clone();
-                    let wav_path = next_wav_path();
-                    if let Err(err) = recorder.borrow_mut().start(&wav_path, move |level| {
-                        meter_for_levels.set_fraction(level as f64)
-                    }) {
-                        status_label.set_label(&format!("Status: Mic error ({err})"));
-                        return;
+                    AppState::Idle => {
+                        let meter_for_levels = meter.clone();
+                        let wav_path = next_wav_path();
+                        if let Err(err) = recorder.borrow_mut().start(&wav_path, move |level| {
+                            meter_for_levels.set_fraction(level as f64)
+                        }) {
+                            status_label.set_label(&format!("Status: Mic error ({err})"));
+                            return;
+                        }
+                        let next = state.borrow().on_event(AppEvent::StartListening);
+                        set_state(&state, next, &status_label, &mic_button_handler, &container);
                     }
-                    let next = state.borrow().on_event(AppEvent::StartListening);
-                    set_state(&state, next, &status_label, &mic_button_handler, &container);
-                }
-                AppState::Transcribing => {
-                    status_label.set_label("Status: Transcribing (please wait)");
+                    AppState::Transcribing => {
+                        status_label.set_label("Status: Transcribing (please wait)");
+                    }
                 }
             });
         }
@@ -301,8 +318,8 @@ fn set_state(
     mic_button: &gtk::Button,
     container: &gtk::Box,
 ) {
-    *state.borrow_mut() = next;
-    apply_state(&state.borrow(), status_label, mic_button, container);
+    *state.borrow_mut() = next.clone();
+    apply_state(&next, status_label, mic_button, container);
 }
 
 fn apply_state(
