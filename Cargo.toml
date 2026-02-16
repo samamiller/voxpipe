@@ -1,0 +1,9 @@
+[package]
+name = "voxpipe"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+adw = { package = "libadwaita", version = "0.7" }
+glib = "0.20"
+gtk = { package = "gtk4", version = "0.9" }

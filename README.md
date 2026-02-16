@@ -15,6 +15,21 @@ Voxpipe is a Linux-first speech recognition app focused on reliable dictation an
 
 Early stage. This repository currently focuses on packaging `whisper.cpp` and the automation that keeps it up to date.
 
+## Build and run
+
+This repository includes a minimal GTK4/libadwaita Rust app scaffold.
+
+Requirements:
+- Rust toolchain (`rustup`, `cargo`)
+- GTK4 development libraries
+- libadwaita development libraries
+
+Run:
+
+```bash
+cargo run
+```
+
 ## Planned capabilities
 
 - Dictation with punctuation and formatting
