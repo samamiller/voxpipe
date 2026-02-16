@@ -8,6 +8,24 @@ fn main() {
     println!("cargo:rerun-if-changed=vendor/src/whisper.cpp");
     println!("cargo:rerun-if-changed=vendor/ggml/CMakeLists.txt");
     println!("cargo:rerun-if-changed=src/whisper_sys/wrapper.h");
+    println!("cargo:rerun-if-env-changed=VOXPIPE_WHISPER_CMAKE_BUILD_TYPE");
+    println!("cargo:rerun-if-env-changed=VOXPIPE_WHISPER_FFMPEG");
+    println!("cargo:rerun-if-env-changed=VOXPIPE_WHISPER_BUILD_EXAMPLES");
+
+    let ffmpeg_enabled = env_flag("VOXPIPE_WHISPER_FFMPEG").unwrap_or(false);
+    let build_examples = env_flag("VOXPIPE_WHISPER_BUILD_EXAMPLES").unwrap_or(ffmpeg_enabled);
+
+    if ffmpeg_enabled && !build_examples {
+        panic!(
+            "VOXPIPE_WHISPER_FFMPEG requires examples to be enabled.\n\
+             Set VOXPIPE_WHISPER_BUILD_EXAMPLES=1 (or unset it to accept the default)."
+        );
+    }
+
+    if ffmpeg_enabled {
+        probe_ffmpeg_pkg_config();
+        println!("cargo:warning=whisper.cpp FFmpeg decode support enabled");
+    }
 
     // Require a system OpenBLAS installation and capture its linker metadata.
     let openblas = pkg_config::Config::new()
@@ -27,9 +45,10 @@ fn main() {
 
     cfg.define("BUILD_SHARED_LIBS", "ON")
         .define("WHISPER_BUILD_TESTS", "OFF")
-        .define("WHISPER_BUILD_EXAMPLES", "OFF")
+        .define("WHISPER_BUILD_EXAMPLES", on_off(build_examples))
         .define("WHISPER_BUILD_SERVER", "OFF")
         .define("WHISPER_CURL", "OFF")
+        .define("WHISPER_FFMPEG", on_off(ffmpeg_enabled))
         .define("CMAKE_BUILD_WITH_INSTALL_RPATH", "ON")
         .define("CMAKE_INSTALL_RPATH", "$ORIGIN")
         .define("GGML_BLAS", "ON")
@@ -87,4 +106,39 @@ fn main() {
         fs::read_to_string(&bindings_path).expect("unable to read generated whisper bindings");
     let patched = generated.replace("extern \"C\" {", "unsafe extern \"C\" {");
     fs::write(&bindings_path, patched).expect("unable to patch generated whisper bindings");
+}
+
+fn on_off(enabled: bool) -> &'static str {
+    if enabled { "ON" } else { "OFF" }
+}
+
+fn env_flag(name: &str) -> Option<bool> {
+    let value = match env::var(name) {
+        Ok(value) => value,
+        Err(env::VarError::NotPresent) => return None,
+        Err(err) => panic!("failed reading {name}: {err}"),
+    };
+
+    let normalized = value.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => panic!(
+            "invalid value for {name}: {value:?}. Expected one of: 1/0, true/false, yes/no, on/off"
+        ),
+    }
+}
+
+fn probe_ffmpeg_pkg_config() {
+    for pkg in ["libavcodec", "libavformat", "libavutil", "libswresample"] {
+        if let Err(err) = pkg_config::Config::new().cargo_metadata(false).probe(pkg) {
+            panic!(
+                "VOXPIPE_WHISPER_FFMPEG=1 but {pkg} was not found via pkg-config: {err}\n\
+                 Install FFmpeg development packages first:\n\
+                   Debian/Ubuntu: sudo apt install libavcodec-dev libavformat-dev libavutil-dev libswresample-dev\n\
+                   RHEL/Fedora:  sudo dnf install libavcodec-free-devel libavformat-free-devel libavutil-free-devel libswresample-free-devel\n\
+                 Then rebuild."
+            );
+        }
+    }
 }

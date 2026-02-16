@@ -32,6 +32,9 @@ Requirements:
 - C toolchain + CMake + pkg-config
 - Clang/LLVM (required by `bindgen`)
 - System OpenBLAS development package discoverable via `pkg-config`
+- Optional for FFmpeg-backed format decoding (Opus/AAC via `whisper-cli`):
+  - Debian/Ubuntu: `sudo apt install libavcodec-dev libavformat-dev libavutil-dev libswresample-dev ffmpeg`
+  - RHEL/Fedora: `sudo dnf install libavcodec-free-devel libavformat-free-devel libavutil-free-devel libswresample-free-devel ffmpeg`
 
 Run:
 
@@ -62,7 +65,16 @@ This script:
 
 Optional environment variables:
 - `VOXPIPE_WHISPER_CMAKE_BUILD_TYPE` (default: `Release`)
+- `VOXPIPE_WHISPER_FFMPEG` (default: `0`) enables FFmpeg decode support in `whisper.cpp` example binaries
+- `VOXPIPE_WHISPER_BUILD_EXAMPLES` (default: follows `VOXPIPE_WHISPER_FFMPEG`) controls whether `whisper-cli` and other examples are built
 - `VOXPIPE_WHISPER_MODEL` (path used by dev smoke model-load trigger)
+
+Example (build with FFmpeg-enabled `whisper-cli`):
+```bash
+VOXPIPE_WHISPER_FFMPEG=1 cargo build
+```
+
+If FFmpeg headers/libs are missing while `VOXPIPE_WHISPER_FFMPEG=1`, `build.rs` fails fast with install commands for supported distros.
 
 ASR model discovery order:
 1. CLI `--model`
@@ -90,6 +102,14 @@ Hidden dev trigger:
 - Press `Ctrl+Shift+W` in the app window.
 - If `VOXPIPE_WHISPER_MODEL` is set, Voxpipe attempts `WhisperContext::new(...)` and reports success/failure in the status label.
 - Context is immediately dropped on success to validate clean teardown.
+
+FFmpeg/Opus smoke (CLI path):
+```bash
+ffmpeg -y -i vendor/samples/jfk.wav /tmp/jfk.opus
+CLI_BIN="$(find target/debug/build -path '*/out/bin/whisper-cli' | head -n 1)"
+CLI_LIB_DIR="$(dirname "$(dirname "$CLI_BIN")")/lib"
+LD_LIBRARY_PATH="$CLI_LIB_DIR" "$CLI_BIN" --model models/ggml-tiny.en.bin --file /tmp/jfk.opus -nt
+```
 
 ## Planned capabilities
 
