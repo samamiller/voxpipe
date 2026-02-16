@@ -39,6 +39,20 @@ Run:
 cargo run
 ```
 
+## Development Samples (Optional)
+
+Extra audio samples are for local development/debug only and are not required for release builds or runtime.
+
+To fetch extra samples and convert to 16-bit WAV:
+```bash
+scripts/fetch-samples.sh
+```
+
+This script:
+- runs `make -j samples` in `vendor/` to download extra sample audio
+- converts downloaded files to 16-bit mono WAV (16 kHz) using `ffmpeg`
+- writes converted files to `~/.cache/voxpipe/samples/` (or `VOXPIPE_SAMPLES_DIR`)
+
 ## Whisper integration details
 
 - `build.rs` drives CMake in `vendor/` with BLAS enabled and shared library output.
