@@ -14,9 +14,12 @@ fn main() -> glib::ExitCode {
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("Voxpipe")
-            .default_width(900)
-            .default_height(600)
+            .default_width(420)
+            .default_height(72)
+            .decorated(false)
+            .modal(true)
             .build();
+        window.set_resizable(false);
 
         let container = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -46,6 +49,22 @@ fn main() -> glib::ExitCode {
         container.append(&controls);
         window.set_content(Some(&container));
 
+        let drag_gesture = gtk::GestureClick::builder().button(0).build();
+        {
+            let window = window.clone();
+            drag_gesture.connect_pressed(move |gesture, _, x, y| {
+                let button = gesture.current_button() as i32;
+                let timestamp = gesture.current_event_time();
+
+                if let (Some(device), Some(surface)) = (gesture.current_event_device(), window.surface()) {
+                    if let Ok(toplevel) = surface.dynamic_cast::<gtk::gdk::Toplevel>() {
+                        toplevel.begin_move(&device, button, x, y, timestamp);
+                    }
+                }
+            });
+        }
+        container.add_controller(drag_gesture);
+
         let state = Rc::new(RefCell::new(AppState::Idle));
         apply_state(
             &state.borrow(),
@@ -60,6 +79,7 @@ fn main() -> glib::ExitCode {
             let state = Rc::clone(&state);
             let status_label = status_label.clone();
             let listen_button = listen_button.clone();
+            let listen_button_handler = listen_button.clone();
             let stop_button = stop_button.clone();
             let fail_button = fail_button.clone();
             let reset_button = reset_button.clone();
@@ -70,7 +90,7 @@ fn main() -> glib::ExitCode {
                     &state,
                     next,
                     &status_label,
-                    &listen_button,
+                    &listen_button_handler,
                     &stop_button,
                     &fail_button,
                     &reset_button,
@@ -83,6 +103,7 @@ fn main() -> glib::ExitCode {
             let status_label = status_label.clone();
             let listen_button = listen_button.clone();
             let stop_button = stop_button.clone();
+            let stop_button_handler = stop_button.clone();
             let fail_button = fail_button.clone();
             let reset_button = reset_button.clone();
 
@@ -93,7 +114,7 @@ fn main() -> glib::ExitCode {
                     next,
                     &status_label,
                     &listen_button,
-                    &stop_button,
+                    &stop_button_handler,
                     &fail_button,
                     &reset_button,
                 );
@@ -104,7 +125,7 @@ fn main() -> glib::ExitCode {
                     next,
                     &status_label,
                     &listen_button,
-                    &stop_button,
+                    &stop_button_handler,
                     &fail_button,
                     &reset_button,
                 );
@@ -112,7 +133,7 @@ fn main() -> glib::ExitCode {
                 let state_timeout = Rc::clone(&state);
                 let status_label_timeout = status_label.clone();
                 let listen_button_timeout = listen_button.clone();
-                let stop_button_timeout = stop_button.clone();
+                let stop_button_timeout = stop_button_handler.clone();
                 let fail_button_timeout = fail_button.clone();
                 let reset_button_timeout = reset_button.clone();
 
@@ -139,6 +160,7 @@ fn main() -> glib::ExitCode {
             let listen_button = listen_button.clone();
             let stop_button = stop_button.clone();
             let fail_button = fail_button.clone();
+            let fail_button_handler = fail_button.clone();
             let reset_button = reset_button.clone();
 
             fail_button.connect_clicked(move |_| {
@@ -151,7 +173,7 @@ fn main() -> glib::ExitCode {
                     &status_label,
                     &listen_button,
                     &stop_button,
-                    &fail_button,
+                    &fail_button_handler,
                     &reset_button,
                 );
             });
@@ -164,6 +186,7 @@ fn main() -> glib::ExitCode {
             let stop_button = stop_button.clone();
             let fail_button = fail_button.clone();
             let reset_button = reset_button.clone();
+            let reset_button_handler = reset_button.clone();
 
             reset_button.connect_clicked(move |_| {
                 let next = state.borrow().on_event(AppEvent::Reset);
@@ -174,7 +197,7 @@ fn main() -> glib::ExitCode {
                     &listen_button,
                     &stop_button,
                     &fail_button,
-                    &reset_button,
+                    &reset_button_handler,
                 );
             });
         }
