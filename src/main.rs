@@ -3,6 +3,7 @@ use std::{
     cell::RefCell,
     path::PathBuf,
     rc::Rc,
+    time::Duration,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -121,11 +122,13 @@ fn main() -> glib::ExitCode {
 
         let state = Rc::new(RefCell::new(AppState::Idle));
         let recorder = Rc::new(RefCell::new(Recorder::new()));
+        let last_recording = Rc::new(RefCell::new(None::<PathBuf>));
         apply_state(&state.borrow(), &status_label, &mic_button, &container);
 
         {
             let state = Rc::clone(&state);
             let recorder = Rc::clone(&recorder);
+            let last_recording = Rc::clone(&last_recording);
             let status_label = status_label.clone();
             let meter = meter.clone();
             let mic_button = mic_button.clone();
@@ -134,8 +137,21 @@ fn main() -> glib::ExitCode {
 
             mic_button.connect_clicked(move |_| {
                 let next = if matches!(*state.borrow(), AppState::Listening) {
-                    if let Some(path) = recorder.borrow_mut().stop() {
+                    let maybe_path = recorder.borrow_mut().stop();
+                    if let Some(path) = maybe_path {
                         eprintln!("[audio] saved recording: {}", path.display());
+                        *last_recording.borrow_mut() = Some(path.clone());
+                        let state_done = Rc::clone(&state);
+                        let status_done = status_label.clone();
+                        let mic_done = mic_button_handler.clone();
+                        let container_done = container.clone();
+                        glib::timeout_add_local_once(Duration::from_millis(100), move || {
+                            let idle = state_done.borrow().on_event(AppEvent::TranscriptionReady);
+                            set_state(&state_done, idle, &status_done, &mic_done, &container_done);
+                        });
+                    } else {
+                        status_label.set_label("Status: Recording stop failed (no WAV path)");
+                        return;
                     }
                     meter.set_fraction(0.0);
                     state.borrow().on_event(AppEvent::StopListening)
