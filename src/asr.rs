@@ -2,7 +2,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const DEFAULT_MODEL_NAME: &str = "ggml-tiny.en.bin";
+const DEFAULT_MODEL_NAME: &str = "ggml-base.en-q5_1.bin";
+const DEFAULT_FETCH_NAME: &str = "base.en-q5_1";
 
 #[derive(Debug)]
 pub enum AsrError {
@@ -112,24 +113,21 @@ pub fn discover_model_path() -> Result<PathBuf, AsrError> {
         }
     }
 
-    if let Some(path) = discover_from_directory(&cache_models_dir()) {
+    if let Some(path) = discover_from_directory(&bundled_models_dir()) {
         return Ok(path);
     }
 
-    if let Some(path) = discover_from_directory(&PathBuf::from("/usr/share/asr-hud/models")) {
+    if let Some(path) = discover_from_directory(&cache_models_dir()) {
         return Ok(path);
     }
 
     Err(AsrError::ModelMissing {
         message: format!(
-            "No Whisper model found via --model, ASR_MODEL, {}, or /usr/share/asr-hud/models",
+            "No Whisper model found via --model, ASR_MODEL, {}, or {}",
+            bundled_models_dir().display(),
             cache_models_dir().display()
         ),
-        fix_command: format!(
-            "scripts/fetch-model.sh tiny.en && export ASR_MODEL=\"{}/{}\"",
-            cache_models_dir().display(),
-            DEFAULT_MODEL_NAME
-        ),
+        fix_command: default_fix_command(),
     })
 }
 
@@ -140,11 +138,7 @@ fn ensure_model_exists(path: PathBuf, source: &str) -> Result<PathBuf, AsrError>
 
     Err(AsrError::ModelMissing {
         message: format!("{source} points to missing model file: {}", path.display()),
-        fix_command: format!(
-            "scripts/fetch-model.sh tiny.en && export ASR_MODEL=\"{}/{}\"",
-            cache_models_dir().display(),
-            DEFAULT_MODEL_NAME
-        ),
+        fix_command: default_fix_command(),
     })
 }
 
@@ -185,7 +179,7 @@ fn discover_from_directory(dir: &Path) -> Option<PathBuf> {
 }
 
 fn cache_models_dir() -> PathBuf {
-    if let Ok(path) = std::env::var("ASR_HUD_MODELS_DIR") {
+    if let Ok(path) = std::env::var("VOXPIPE_MODELS_CACHE_DIR") {
         let trimmed = path.trim();
         if !trimmed.is_empty() {
             return PathBuf::from(trimmed);
@@ -193,7 +187,26 @@ fn cache_models_dir() -> PathBuf {
     }
 
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".cache/asr-hud/models")
+    PathBuf::from(home).join(".cache/voxpipe/models")
+}
+
+fn bundled_models_dir() -> PathBuf {
+    if let Ok(path) = std::env::var("VOXPIPE_MODELS_DIR") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+
+    PathBuf::from("/usr/share/voxpipe/models")
+}
+
+fn default_fix_command() -> String {
+    format!(
+        "scripts/fetch-model.sh {DEFAULT_FETCH_NAME} && export ASR_MODEL=\"{}/{}\"",
+        cache_models_dir().display(),
+        DEFAULT_MODEL_NAME
+    )
 }
 
 fn extract_transcript(stdout: &str) -> String {
@@ -272,7 +285,7 @@ mod tests {
         let dir = std::env::temp_dir().join("voxpipe-asr-model-discovery");
         fs::create_dir_all(&dir)?;
         let other = dir.join("ggml-base.en.bin");
-        let default = dir.join("ggml-tiny.en.bin");
+        let default = dir.join("ggml-base.en-q5_1.bin");
         fs::write(&other, "x")?;
         fs::write(&default, "x")?;
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL_NAME="${1:-tiny.en}"
-CACHE_DIR="${ASR_HUD_MODELS_DIR:-$HOME/.cache/asr-hud/models}"
+MODEL_NAME="${1:-base.en-q5_1}"
+CACHE_DIR="${VOXPIPE_MODELS_CACHE_DIR:-$HOME/.cache/voxpipe/models}"
 
 mkdir -p "$CACHE_DIR"
 

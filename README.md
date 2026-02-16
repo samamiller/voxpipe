@@ -50,6 +50,23 @@ Optional environment variables:
 - `VOXPIPE_WHISPER_CMAKE_BUILD_TYPE` (default: `Release`)
 - `VOXPIPE_WHISPER_MODEL` (path used by dev smoke model-load trigger)
 
+ASR model discovery order:
+1. CLI `--model`
+2. `ASR_MODEL`
+3. Preinstalled default in `/usr/share/voxpipe/models/ggml-base.en-q5_1.bin`
+4. User cache under `~/.cache/voxpipe/models/`
+
+Default bundled model:
+- `ggml-base.en-q5_1.bin` is the expected preinstalled default for Voxpipe packages.
+- Approximate footprint is model-dependent; `base.en-q5_1` is typically larger than tiny-class models and should be accounted for in package sizing.
+- Overrides remain supported via `--model` or `ASR_MODEL`.
+
+If the default model is missing locally, fetch a cache copy:
+```bash
+scripts/fetch-model.sh base.en-q5_1
+export ASR_MODEL="$HOME/.cache/voxpipe/models/ggml-base.en-q5_1.bin"
+```
+
 ## Runtime smoke checks
 
 On startup, the app logs Whisper system info to stderr:
