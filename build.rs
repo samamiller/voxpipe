@@ -1,11 +1,13 @@
 use std::env;
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 fn main() {
     println!("cargo:rerun-if-changed=vendor/CMakeLists.txt");
     println!("cargo:rerun-if-changed=vendor/include/whisper.h");
     println!("cargo:rerun-if-changed=vendor/src/whisper.cpp");
     println!("cargo:rerun-if-changed=vendor/ggml/CMakeLists.txt");
+    println!("cargo:rerun-if-changed=src/whisper_sys/wrapper.h");
 
     // Require a system OpenBLAS installation and capture its linker metadata.
     let openblas = pkg_config::Config::new()
@@ -48,4 +50,33 @@ fn main() {
     for lib in &openblas.libs {
         println!("cargo:rustc-link-lib={lib}");
     }
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is not set"));
+    let installed_include = dst.join("include");
+    let bindings = bindgen::Builder::default()
+        .header("src/whisper_sys/wrapper.h")
+        .clang_arg("-x")
+        .clang_arg("c")
+        .clang_arg("-std=c11")
+        .clang_arg("-Ivendor/include")
+        .clang_arg("-Ivendor/ggml/include")
+        .clang_arg(format!("-I{}", installed_include.display()))
+        .allowlist_function("(whisper|ggml)_.*")
+        .allowlist_type("(whisper|ggml)_.*")
+        .allowlist_var("(WHISPER|GGML)_.*")
+        .layout_tests(false)
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        .generate()
+        .expect("unable to generate whisper bindings");
+
+    let bindings_path = out_dir.join("bindings.rs");
+    bindings
+        .write_to_file(&bindings_path)
+        .expect("unable to write whisper bindings");
+
+    // Rust 2024 requires `unsafe extern` blocks.
+    let generated = fs::read_to_string(&bindings_path)
+        .expect("unable to read generated whisper bindings");
+    let patched = generated.replace("extern \"C\" {", "unsafe extern \"C\" {");
+    fs::write(&bindings_path, patched).expect("unable to patch generated whisper bindings");
 }

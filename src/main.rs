@@ -3,6 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 
 mod audio;
 mod state;
+pub mod whisper_sys;
 
 use audio::monitor::Monitor;
 use state::{AppEvent, AppState};
