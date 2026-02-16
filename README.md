@@ -13,22 +13,52 @@ Voxpipe is a Linux-first speech recognition app focused on reliable dictation an
 
 ## Status
 
-Early stage. This repository currently focuses on packaging `whisper.cpp` and the automation that keeps it up to date.
+Early stage, but now includes:
+- GTK4/libadwaita desktop shell UI
+- GStreamer mic monitor path
+- `whisper.cpp` vendored CMake build driven by `cargo build`
+- Bindgen-generated Rust FFI (`whisper_sys`) and a safe wrapper (`whisper_rs`)
+- System OpenBLAS linkage for `whisper.cpp`
 
 ## Build and run
 
-This repository includes a minimal GTK4/libadwaita Rust app scaffold.
+`cargo build` compiles the Rust app and also builds `vendor/` (`whisper.cpp`) as a shared library with CMake.
 
 Requirements:
 - Rust toolchain (`rustup`, `cargo`)
 - GTK4 development libraries
 - libadwaita development libraries
+- GStreamer 1.0 development libraries
+- C toolchain + CMake + pkg-config
+- Clang/LLVM (required by `bindgen`)
+- System OpenBLAS development package discoverable via `pkg-config`
 
 Run:
 
 ```bash
 cargo run
 ```
+
+## Whisper integration details
+
+- `build.rs` drives CMake in `vendor/` with BLAS enabled and shared library output.
+- OpenBLAS is resolved from the system via `pkg-config` (`openblas64` fallback to `openblas`).
+- Raw generated bindings live behind `src/whisper_sys/`.
+- Safe wrapper APIs are exposed from `src/whisper_rs.rs`.
+
+Optional environment variables:
+- `VOXPIPE_WHISPER_CMAKE_BUILD_TYPE` (default: `Release`)
+- `VOXPIPE_WHISPER_MODEL` (path used by dev smoke model-load trigger)
+
+## Runtime smoke checks
+
+On startup, the app logs Whisper system info to stderr:
+- `[whisper] system_info: ...`
+
+Hidden dev trigger:
+- Press `Ctrl+Shift+W` in the app window.
+- If `VOXPIPE_WHISPER_MODEL` is set, Voxpipe attempts `WhisperContext::new(...)` and reports success/failure in the status label.
+- Context is immediately dropped on success to validate clean teardown.
 
 ## Planned capabilities
 

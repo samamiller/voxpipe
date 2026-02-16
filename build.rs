@@ -27,6 +27,8 @@ fn main() {
         .define("WHISPER_BUILD_EXAMPLES", "OFF")
         .define("WHISPER_BUILD_SERVER", "OFF")
         .define("WHISPER_CURL", "OFF")
+        .define("CMAKE_BUILD_WITH_INSTALL_RPATH", "ON")
+        .define("CMAKE_INSTALL_RPATH", "$ORIGIN")
         .define("GGML_BLAS", "ON")
         .define("GGML_BLAS_VENDOR", "OpenBLAS")
         .define("BLA_VENDOR", "OpenBLAS");
@@ -37,9 +39,12 @@ fn main() {
 
     if Path::new(&lib_dir).exists() {
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
+        println!("cargo:rustc-link-arg=-Wl,--disable-new-dtags");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
     }
     if Path::new(&lib64_dir).exists() {
         println!("cargo:rustc-link-search=native={}", lib64_dir.display());
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib64_dir.display());
     }
 
     println!("cargo:rustc-link-lib=dylib=whisper");

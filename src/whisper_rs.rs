@@ -67,3 +67,29 @@ impl Drop for WhisperContext {
         unsafe { whisper_sys::whisper_free(self.raw.as_ptr()) };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{WhisperContext, system_info};
+    use std::error::Error;
+
+    #[test]
+    fn system_info_smoke() -> Result<(), Box<dyn Error>> {
+        let info = system_info();
+        if info.trim().is_empty() {
+            return Err("whisper system info should not be empty".into());
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires VOXPIPE_WHISPER_MODEL=/path/to/model"]
+    fn context_load_smoke_from_env() -> Result<(), Box<dyn Error>> {
+        let model_path = std::env::var("VOXPIPE_WHISPER_MODEL")
+            .map_err(|_| "set VOXPIPE_WHISPER_MODEL to a local ggml model path")?;
+        let ctx = WhisperContext::new(&model_path)
+            .map_err(|err| format!("failed to init whisper context from {model_path}: {err}"))?;
+        drop(ctx);
+        Ok(())
+    }
+}
