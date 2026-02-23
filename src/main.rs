@@ -100,6 +100,34 @@ fn main() -> glib::ExitCode {
             .build();
         model_menu_button.add_css_class("hud-control");
 
+        let model_info_button = gtk::Button::builder()
+            .icon_name("dialog-information-symbolic")
+            .tooltip_text("Model info")
+            .build();
+        model_info_button.add_css_class("hud-control");
+
+        let model_info_popover = gtk::Popover::new();
+        model_info_popover.set_has_arrow(true);
+        model_info_popover.set_parent(&model_info_button);
+
+        let model_info_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(6)
+            .margin_top(10)
+            .margin_bottom(10)
+            .margin_start(12)
+            .margin_end(12)
+            .build();
+        let model_info_name = gtk::Label::builder().xalign(0.0).build();
+        let model_info_path = gtk::Label::builder().xalign(0.0).build();
+        let model_info_size = gtk::Label::builder().xalign(0.0).build();
+        let model_info_sys = gtk::Label::builder().xalign(0.0).wrap(true).build();
+        model_info_box.append(&model_info_name);
+        model_info_box.append(&model_info_path);
+        model_info_box.append(&model_info_size);
+        model_info_box.append(&model_info_sys);
+        model_info_popover.set_child(Some(&model_info_box));
+
         let meter = gtk::ProgressBar::builder()
             .hexpand(true)
             .show_text(false)
@@ -143,6 +171,7 @@ fn main() -> glib::ExitCode {
         top_bar.append(&status_label);
         top_bar.append(&model_label);
         top_bar.append(&model_menu_button);
+        top_bar.append(&model_info_button);
         top_bar.append(&meter);
         top_bar.append(&right_controls);
 
@@ -165,6 +194,23 @@ fn main() -> glib::ExitCode {
                 Ok(ref path) => apply_model_indicator(&model_label, Some(path), None),
                 Err(err) => apply_model_indicator(&model_label, None, Some(err.to_string())),
             }
+        }
+
+        {
+            let model_info_popover = model_info_popover.clone();
+            let model_info_name = model_info_name.clone();
+            let model_info_path = model_info_path.clone();
+            let model_info_size = model_info_size.clone();
+            let model_info_sys = model_info_sys.clone();
+            model_info_button.connect_clicked(move |_| {
+                update_model_info(
+                    &model_info_name,
+                    &model_info_path,
+                    &model_info_size,
+                    &model_info_sys,
+                );
+                model_info_popover.popup();
+            });
         }
 
         {
@@ -784,5 +830,35 @@ fn apply_model_indicator(label: &gtk::Label, path: Option<&std::path::Path>, err
         label.set_label("Model missing");
         label.set_tooltip_text(Some(&error));
         label.add_css_class("hud-model-error");
+    }
+}
+
+fn update_model_info(
+    name_label: &gtk::Label,
+    path_label: &gtk::Label,
+    size_label: &gtk::Label,
+    sys_label: &gtk::Label,
+) {
+    match asr::discover_model_path() {
+        Ok(path) => {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("model");
+            name_label.set_label(&format!("Name: {name}"));
+            path_label.set_label(&format!("Path: {}", path.display()));
+            let size = std::fs::metadata(&path)
+                .map(|meta| meta.len())
+                .map(|bytes| format!("{bytes} bytes"))
+                .unwrap_or_else(|_| "unknown".to_string());
+            size_label.set_label(&format!("Size: {size}"));
+            sys_label.set_label(&format!("Whisper: {}", whisper_rs::system_info()));
+        }
+        Err(err) => {
+            name_label.set_label("Name: missing");
+            path_label.set_label(&format!("Error: {err}"));
+            size_label.set_label("Size: unavailable");
+            sys_label.set_label("");
+        }
     }
 }
