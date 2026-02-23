@@ -203,6 +203,10 @@ fn resolve_whisper_cli() -> WhisperCliLocation {
         return local;
     }
 
+    if let Some(local) = discover_exe_relative_whisper_cli() {
+        return local;
+    }
+
     WhisperCliLocation {
         binary: PathBuf::from("whisper-cli"),
         lib_dir: None,
@@ -238,6 +242,46 @@ fn discover_local_whisper_cli() -> Option<WhisperCliLocation> {
         binary: bin.clone(),
         lib_dir: Some(lib_dir.clone()),
     })
+}
+
+fn discover_exe_relative_whisper_cli() -> Option<WhisperCliLocation> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    let direct = exe_dir.join("whisper-cli");
+    let libexec = exe_dir.join("..").join("libexec").join("whisper-cli");
+    let lib_voxpipe = exe_dir.join("..").join("lib").join("voxpipe").join("whisper-cli");
+    let candidates = [direct, libexec, lib_voxpipe];
+
+    for candidate in candidates {
+        if !candidate.is_file() {
+            continue;
+        }
+
+        let lib_dir = candidate
+            .parent()
+            .and_then(|parent| {
+                let local_lib = parent.join("lib");
+                if local_lib.is_dir() {
+                    return Some(local_lib);
+                }
+                let sibling_lib = parent.join("..").join("lib");
+                if sibling_lib.is_dir() {
+                    return Some(sibling_lib);
+                }
+                let sibling_voxpipe = parent.join("..").join("lib").join("voxpipe");
+                if sibling_voxpipe.is_dir() {
+                    return Some(sibling_voxpipe);
+                }
+                None
+            });
+
+        return Some(WhisperCliLocation {
+            binary: candidate,
+            lib_dir,
+        });
+    }
+
+    None
 }
 
 fn merge_library_path(prefix: &Path) -> String {
