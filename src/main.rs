@@ -86,7 +86,6 @@ fn main() -> glib::ExitCode {
         model_menu.append(Some("Change model…"), Some("app.change_model"));
         model_menu.append(Some("Download models…"), Some("app.download_models"));
         model_menu.append(Some("Open models folder"), Some("app.open_models_folder"));
-        model_menu.append(Some("Refresh model"), Some("app.refresh_models"));
 
         let model_menu_button = gtk::MenuButton::builder()
             .icon_name("open-menu-symbolic")
@@ -296,13 +295,6 @@ fn main() -> glib::ExitCode {
             app.add_action(&action);
         }
 
-        {
-            let action = gio::SimpleAction::new("refresh_models", None);
-            action.connect_activate(move |_, _| {
-                let _ = asr::discover_model_path();
-            });
-            app.add_action(&action);
-        }
 
         {
             let transcript = transcript.clone();
