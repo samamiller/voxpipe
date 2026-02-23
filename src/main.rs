@@ -50,7 +50,6 @@ fn main() -> glib::ExitCode {
             .decorated(false)
             .modal(false)
             .build();
-        window.set_resizable(false);
         window.add_css_class("hud-window");
 
         let panel = gtk::Box::builder()
