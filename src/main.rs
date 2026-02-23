@@ -69,6 +69,12 @@ fn main() -> glib::ExitCode {
             .build();
         top_bar.add_css_class("hud-topbar");
 
+        let file_button = gtk::Button::builder()
+            .icon_name("audio-x-generic-symbolic")
+            .tooltip_text("Transcribe file")
+            .build();
+        file_button.add_css_class("hud-control");
+
         let mic_button = gtk::Button::builder()
             .icon_name("audio-input-microphone-symbolic")
             .tooltip_text("Start listening")
@@ -133,12 +139,6 @@ fn main() -> glib::ExitCode {
             .spacing(4)
             .build();
         right_controls.add_css_class("hud-controls");
-        let file_button = gtk::Button::builder()
-            .icon_name("document-open-symbolic")
-            .tooltip_text("Transcribe file")
-            .build();
-        file_button.add_css_class("hud-control");
-
         let debug_button = gtk::Button::builder()
             .icon_name("document-edit-symbolic")
             .tooltip_text("Append test transcript")
@@ -155,11 +155,11 @@ fn main() -> glib::ExitCode {
             .tooltip_text("Close")
             .build();
         close_button.add_css_class("hud-control");
-        right_controls.append(&file_button);
         right_controls.append(&debug_button);
         right_controls.append(&minimize_button);
         right_controls.append(&close_button);
 
+        top_bar.append(&file_button);
         top_bar.append(&mic_button);
         top_bar.append(&status_label);
         top_bar.append(&model_menu_button);
