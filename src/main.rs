@@ -252,6 +252,10 @@ fn main() -> glib::ExitCode {
                 dialog.set_transient_for(Some(&window));
                 dialog.set_action(gtk::FileChooserAction::Open);
 
+                if let Some(dir) = asr::model_default_dir() {
+                    let _ = dialog.set_current_folder(Some(&gio::File::for_path(dir)));
+                }
+
                 let filter = gtk::FileFilter::new();
                 filter.set_name(Some("Whisper model (*.bin)"));
                 filter.add_pattern("*.bin");

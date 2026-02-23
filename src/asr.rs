@@ -207,6 +207,12 @@ pub fn model_search_dirs() -> Vec<PathBuf> {
     vec![bundled_models_dir(), repo_models_dir(), cache_models_dir()]
 }
 
+pub fn model_default_dir() -> Option<PathBuf> {
+    model_search_dirs()
+        .into_iter()
+        .find(|dir| dir.is_dir())
+}
+
 pub fn ffmpeg_enabled() -> bool {
     matches!(option_env!("VOXPIPE_WHISPER_FFMPEG"), Some("1"))
 }
