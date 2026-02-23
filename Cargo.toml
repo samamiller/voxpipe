@@ -9,6 +9,7 @@ glib = "0.20"
 gtk = { package = "gtk4", version = "0.9" }
 gstreamer = "0.23"
 libc = "0.2"
+ureq = { version = "2.10", features = ["tls"] }
 
 [build-dependencies]
 cmake = "0.1"

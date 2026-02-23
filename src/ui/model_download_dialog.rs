@@ -1,11 +1,14 @@
 use gtk::prelude::*;
+use gtk::glib;
 
 use crate::asr;
+use crate::models::download::{self, DownloadEvent};
 
 struct ModelEntry {
     name: &'static str,
     file: &'static str,
     size: &'static str,
+    url: &'static str,
 }
 
 const MODELS: &[ModelEntry] = &[
@@ -13,21 +16,25 @@ const MODELS: &[ModelEntry] = &[
         name: "tiny.en (q5_1)",
         file: "ggml-tiny.en-q5_1.bin",
         size: "~31 MB",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin",
     },
     ModelEntry {
         name: "base.en (q5_1)",
         file: "ggml-base.en-q5_1.bin",
         size: "~78 MB",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q5_1.bin",
     },
     ModelEntry {
         name: "small.en (q5_1)",
         file: "ggml-small.en-q5_1.bin",
         size: "~255 MB",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q5_1.bin",
     },
     ModelEntry {
         name: "medium.en (q5_1)",
         file: "ggml-medium.en-q5_1.bin",
         size: "~850 MB",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en-q5_1.bin",
     },
 ];
 
@@ -85,9 +92,61 @@ pub fn show_model_download_dialog(parent: &impl IsA<gtk::Window>) {
 
         let status_label_clone = status_label.clone();
         let action_button_clone = action_button.clone();
+        let file_name = entry.file.to_string();
+        let url = entry.url.to_string();
         action_button.connect_clicked(move |_| {
+            let target = asr::cache_models_dir().join(&file_name);
             status_label_clone.set_label("Queued");
             action_button_clone.set_sensitive(false);
+            action_button_clone.set_label("Downloading");
+
+            let (tx, rx) = std::sync::mpsc::channel();
+            let handle = download::download_model(&url, &target, tx);
+            let mut handle = Some(handle);
+            let status_label_progress = status_label_clone.clone();
+            let action_button_progress = action_button_clone.clone();
+
+            glib::timeout_add_local(std::time::Duration::from_millis(150), move || {
+                match rx.try_recv() {
+                    Ok(DownloadEvent::Progress { downloaded, total }) => {
+                        if let Some(total) = total {
+                            let percent = (downloaded as f64 / total as f64) * 100.0;
+                            status_label_progress
+                                .set_label(&format!("Downloading {:.0}%", percent));
+                        } else {
+                            status_label_progress.set_label("Downloading...");
+                        }
+                        glib::ControlFlow::Continue
+                    }
+                    Ok(DownloadEvent::Done) => {
+                        if let Some(handle) = handle.take() {
+                            let _ = handle.join();
+                        }
+                        status_label_progress.set_label("Installed");
+                        action_button_progress.set_label("Installed");
+                        glib::ControlFlow::Break
+                    }
+                    Ok(DownloadEvent::Error(err)) => {
+                        if let Some(handle) = handle.take() {
+                            let _ = handle.join();
+                        }
+                        status_label_progress.set_label(&format!("Failed: {err}"));
+                        action_button_progress.set_label("Retry");
+                        action_button_progress.set_sensitive(true);
+                        glib::ControlFlow::Break
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        if let Some(handle) = handle.take() {
+                            let _ = handle.join();
+                        }
+                        status_label_progress.set_label("Download failed");
+                        action_button_progress.set_label("Retry");
+                        action_button_progress.set_sensitive(true);
+                        glib::ControlFlow::Break
+                    }
+                }
+            });
         });
 
         row.append(&title);

@@ -30,6 +30,8 @@ node_modules/
 venv/
 target/
 models/
+!src/models/
+!src/models/**
 
 # bv (beads viewer) local config and caches
 .bv/

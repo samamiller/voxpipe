@@ -10,6 +10,7 @@ use std::{
 
 mod asr;
 mod audio;
+mod models;
 mod state;
 mod ui;
 pub mod whisper_rs;
