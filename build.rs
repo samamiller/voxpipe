@@ -14,11 +14,15 @@ fn main() {
 
     let ffmpeg_enabled = env_flag("VOXPIPE_WHISPER_FFMPEG").unwrap_or(false);
     let build_examples = env_flag("VOXPIPE_WHISPER_BUILD_EXAMPLES").unwrap_or(true);
+    println!(
+        "cargo:rustc-env=VOXPIPE_WHISPER_FFMPEG={}",
+        if ffmpeg_enabled { "1" } else { "0" }
+    );
 
     if ffmpeg_enabled && !build_examples {
-        panic!(
+        die(
             "VOXPIPE_WHISPER_FFMPEG requires examples to be enabled.\n\
-             Set VOXPIPE_WHISPER_BUILD_EXAMPLES=1 (or unset it to accept the default)."
+             Set VOXPIPE_WHISPER_BUILD_EXAMPLES=1 (or unset it to accept the default).",
         );
     }
 
@@ -116,29 +120,34 @@ fn env_flag(name: &str) -> Option<bool> {
     let value = match env::var(name) {
         Ok(value) => value,
         Err(env::VarError::NotPresent) => return None,
-        Err(err) => panic!("failed reading {name}: {err}"),
+        Err(err) => die(&format!("failed reading {name}: {err}")),
     };
 
     let normalized = value.trim().to_ascii_lowercase();
     match normalized.as_str() {
         "1" | "true" | "yes" | "on" => Some(true),
         "0" | "false" | "no" | "off" => Some(false),
-        _ => panic!(
+        _ => die(&format!(
             "invalid value for {name}: {value:?}. Expected one of: 1/0, true/false, yes/no, on/off"
-        ),
+        )),
     }
 }
 
 fn probe_ffmpeg_pkg_config() {
     for pkg in ["libavcodec", "libavformat", "libavutil", "libswresample"] {
         if let Err(err) = pkg_config::Config::new().cargo_metadata(false).probe(pkg) {
-            panic!(
+            die(&format!(
                 "VOXPIPE_WHISPER_FFMPEG=1 but {pkg} was not found via pkg-config: {err}\n\
                  Install FFmpeg development packages first:\n\
                    Debian/Ubuntu: sudo apt install libavcodec-dev libavformat-dev libavutil-dev libswresample-dev\n\
                    RHEL/Fedora:  sudo dnf install libavcodec-free-devel libavformat-free-devel libavutil-free-devel libswresample-free-devel\n\
                  Then rebuild."
-            );
+            ));
         }
     }
+}
+
+fn die(message: &str) -> ! {
+    eprintln!("{message}");
+    std::process::exit(1);
 }

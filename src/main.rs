@@ -595,9 +595,17 @@ fn main() -> glib::ExitCode {
                 dialog.set_transient_for(Some(&window));
                 dialog.set_action(gtk::FileChooserAction::Open);
 
+                let ffmpeg_enabled = asr::ffmpeg_enabled();
                 let filter = gtk::FileFilter::new();
-                filter.set_name(Some("WAV audio"));
-                filter.add_pattern("*.wav");
+                if ffmpeg_enabled {
+                    filter.set_name(Some("Audio files (*.wav, *.opus, *.ogg, *.m4a, *.aac)"));
+                    for pattern in ["*.wav", "*.opus", "*.ogg", "*.m4a", "*.aac"] {
+                        filter.add_pattern(pattern);
+                    }
+                } else {
+                    filter.set_name(Some("WAV audio"));
+                    filter.add_pattern("*.wav");
+                }
                 dialog.add_filter(&filter);
                 dialog.set_filter(&filter);
 
@@ -608,6 +616,7 @@ fn main() -> glib::ExitCode {
                 let panel = panel.clone();
                 let transcript = transcript.clone();
                 let model_label = model_label.clone();
+                let ffmpeg_enabled = ffmpeg_enabled;
 
                 dialog.connect_response(move |dialog, response| {
                     if response != gtk::ResponseType::Accept {
@@ -626,6 +635,19 @@ fn main() -> glib::ExitCode {
                         dialog.destroy();
                         return;
                     };
+
+                    let is_wav = path
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| ext.eq_ignore_ascii_case("wav"))
+                        .unwrap_or(false);
+                    if !ffmpeg_enabled && !is_wav {
+                        let err = "Unsupported audio format. Rebuild with VOXPIPE_WHISPER_FFMPEG=1 and install FFmpeg dev packages.";
+                        status_label.set_label("Status: Unsupported audio format");
+                        transcript.append_error(err);
+                        dialog.destroy();
+                        return;
+                    }
 
                     let next =
                         state

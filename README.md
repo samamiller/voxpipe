@@ -69,6 +69,10 @@ Optional environment variables:
 - `VOXPIPE_WHISPER_BUILD_EXAMPLES` (default: `1`) controls whether `whisper-cli` and other examples are built
 - `VOXPIPE_WHISPER_MODEL` (path used by dev smoke model-load trigger)
 
+File transcription formats:
+- With `VOXPIPE_WHISPER_FFMPEG=1`, the file picker accepts Opus/AAC and other FFmpeg-supported formats.
+- Without FFmpeg, only WAV files are accepted.
+
 Example (build with FFmpeg-enabled `whisper-cli`):
 ```bash
 VOXPIPE_WHISPER_FFMPEG=1 cargo build
