@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use gtk::gio;
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     path::PathBuf,
     rc::Rc,
     sync::mpsc,
@@ -168,6 +168,7 @@ fn main() -> glib::ExitCode {
 
         let transcript = Transcript::new();
         let transcript_view = transcript.view();
+        let confidence_colors = Rc::new(Cell::new(false));
 
         let transcript_copy_button = gtk::Button::builder()
             .icon_name("edit-copy-symbolic")
@@ -175,6 +176,18 @@ fn main() -> glib::ExitCode {
             .action_name("app.transcript_copy")
             .build();
         transcript_copy_button.add_css_class("hud-control");
+
+        let transcript_colors_toggle = gtk::ToggleButton::builder()
+            .icon_name("format-text-color-symbolic")
+            .tooltip_text("Confidence colors")
+            .build();
+        transcript_colors_toggle.add_css_class("hud-control");
+        {
+            let confidence_colors = Rc::clone(&confidence_colors);
+            transcript_colors_toggle.connect_toggled(move |toggle| {
+                confidence_colors.set(toggle.is_active());
+            });
+        }
 
         let transcript_clear_button = gtk::Button::builder()
             .icon_name("edit-clear-symbolic")
@@ -195,6 +208,7 @@ fn main() -> glib::ExitCode {
             .build();
         transcript_title.add_css_class("hud-transcript-title");
         transcript_header.append(&transcript_title);
+        transcript_header.append(&transcript_colors_toggle);
         transcript_header.append(&transcript_copy_button);
         transcript_header.append(&transcript_clear_button);
 
@@ -367,6 +381,7 @@ fn main() -> glib::ExitCode {
             let panel = panel.clone();
             let transcript = transcript.clone();
             let file_button_handler = file_button.clone();
+            let confidence_colors = Rc::clone(&confidence_colors);
 
             mic_button.connect_clicked(move |_| {
                 let current_state = state.borrow().clone();
@@ -409,10 +424,16 @@ fn main() -> glib::ExitCode {
                         }
                     };
 
+                    let use_confidence_colors = confidence_colors.get();
                     let (tx, rx) = mpsc::channel::<Result<String, String>>();
                     let handle = std::thread::spawn(move || {
-                        let result = asr::transcribe(&wav_path, &model_path, &["-nt"])
-                            .map_err(|err| err.to_string());
+                        let args = if use_confidence_colors {
+                            vec!["-nt", "--print-colors"]
+                        } else {
+                            vec!["-nt"]
+                        };
+                        let result =
+                            asr::transcribe(&wav_path, &model_path, &args).map_err(|err| err.to_string());
                         let _ = tx.send(result);
                     });
 
@@ -422,6 +443,7 @@ fn main() -> glib::ExitCode {
                     let file_done = file_button_handler.clone();
                     let panel_done = panel.clone();
                     let transcript_done = transcript.clone();
+                    let use_confidence_colors = use_confidence_colors;
                     let mut handle = Some(handle);
                     glib::timeout_add_local(
                         std::time::Duration::from_millis(100),
@@ -439,7 +461,11 @@ fn main() -> glib::ExitCode {
                                     Err(_) => "unknown".to_string(),
                                 };
                                 let header = format!("Mic ({timestamp})");
-                                transcript_done.append_block(&header, &text);
+                                if use_confidence_colors {
+                                    transcript_done.append_ansi_block(&header, &text);
+                                } else {
+                                    transcript_done.append_block(&header, &text);
+                                }
                                 status_done.set_label("Status: Transcribed");
                                 let idle =
                                     state_done.borrow().on_event(AppEvent::TranscriptionReady);
@@ -551,6 +577,7 @@ fn main() -> glib::ExitCode {
             let file_button_handler = file_button.clone();
             let panel = panel.clone();
             let transcript = transcript.clone();
+            let confidence_colors = Rc::clone(&confidence_colors);
 
             file_button.connect_clicked(move |_| {
                 let dialog = gtk::FileChooserNative::builder()
@@ -585,6 +612,7 @@ fn main() -> glib::ExitCode {
                 let panel = panel.clone();
                 let transcript = transcript.clone();
                 let ffmpeg_enabled = ffmpeg_enabled;
+                let confidence_colors = Rc::clone(&confidence_colors);
 
                 dialog.connect_response(move |dialog, response| {
                     if response != gtk::ResponseType::Accept {
@@ -648,11 +676,17 @@ fn main() -> glib::ExitCode {
                         }
                     };
 
+                    let use_confidence_colors = confidence_colors.get();
                     let (tx, rx) = mpsc::channel::<Result<String, String>>();
                     let path_for_worker = path.clone();
                     let handle = std::thread::spawn(move || {
-                        let result = asr::transcribe(&path_for_worker, &model_path, &["-nt"])
-                            .map_err(|err| err.to_string());
+                        let args = if use_confidence_colors {
+                            vec!["-nt", "--print-colors"]
+                        } else {
+                            vec!["-nt"]
+                        };
+                        let result =
+                            asr::transcribe(&path_for_worker, &model_path, &args).map_err(|err| err.to_string());
                         let _ = tx.send(result);
                     });
 
@@ -663,6 +697,7 @@ fn main() -> glib::ExitCode {
                     let panel_done = panel.clone();
                     let transcript_done = transcript.clone();
                     let path_for_header = path.clone();
+                    let use_confidence_colors = use_confidence_colors;
                     let mut handle = Some(handle);
                     glib::timeout_add_local(
                         std::time::Duration::from_millis(100),
@@ -676,7 +711,11 @@ fn main() -> glib::ExitCode {
                                     .and_then(|name| name.to_str())
                                     .unwrap_or("file");
                                 let header = format!("File: {name}");
-                                transcript_done.append_block(&header, &text);
+                                if use_confidence_colors {
+                                    transcript_done.append_ansi_block(&header, &text);
+                                } else {
+                                    transcript_done.append_block(&header, &text);
+                                }
                                 status_done.set_label("Status: Transcribed");
                                 let idle =
                                     state_done.borrow().on_event(AppEvent::TranscriptionReady);
