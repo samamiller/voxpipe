@@ -203,6 +203,10 @@ pub fn discover_model_path() -> Result<PathBuf, AsrError> {
     })
 }
 
+pub fn model_search_dirs() -> Vec<PathBuf> {
+    vec![bundled_models_dir(), repo_models_dir(), cache_models_dir()]
+}
+
 fn ensure_model_exists(path: PathBuf, source: &str) -> Result<PathBuf, AsrError> {
     if path.is_file() {
         return Ok(path);

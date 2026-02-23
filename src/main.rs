@@ -290,14 +290,7 @@ fn main() -> glib::ExitCode {
             let window = window.clone();
             let action = gio::SimpleAction::new("download_models", None);
             action.connect_activate(move |_, _| {
-                let dialog = gtk::MessageDialog::builder()
-                    .transient_for(&window)
-                    .modal(true)
-                    .buttons(gtk::ButtonsType::Ok)
-                    .text("Model downloads are not implemented yet.")
-                    .build();
-                dialog.connect_response(|dialog, _| dialog.destroy());
-                dialog.show();
+                ui::model_download_dialog::show_model_download_dialog(&window);
             });
             app.add_action(&action);
         }
