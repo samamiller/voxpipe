@@ -1,4 +1,5 @@
 use adw::prelude::*;
+use gtk::gio;
 use std::{
     cell::RefCell,
     path::PathBuf,
@@ -87,6 +88,18 @@ fn main() -> glib::ExitCode {
             .build();
         model_label.add_css_class("hud-model");
 
+        let model_menu = gio::Menu::new();
+        model_menu.append(Some("Change model…"), Some("app.change_model"));
+        model_menu.append(Some("Download models…"), Some("app.download_models"));
+        model_menu.append(Some("Open models folder"), Some("app.open_models_folder"));
+        model_menu.append(Some("Refresh model"), Some("app.refresh_models"));
+
+        let model_menu_button = gtk::MenuButton::builder()
+            .icon_name("open-menu-symbolic")
+            .menu_model(&model_menu)
+            .build();
+        model_menu_button.add_css_class("hud-control");
+
         let meter = gtk::ProgressBar::builder()
             .hexpand(true)
             .show_text(false)
@@ -129,6 +142,7 @@ fn main() -> glib::ExitCode {
         top_bar.append(&mic_button);
         top_bar.append(&status_label);
         top_bar.append(&model_label);
+        top_bar.append(&model_menu_button);
         top_bar.append(&meter);
         top_bar.append(&right_controls);
 
@@ -151,6 +165,98 @@ fn main() -> glib::ExitCode {
                 Ok(ref path) => apply_model_indicator(&model_label, Some(path), None),
                 Err(err) => apply_model_indicator(&model_label, None, Some(err.to_string())),
             }
+        }
+
+        {
+            let window = window.clone();
+            let model_label = model_label.clone();
+            let action = gio::SimpleAction::new("change_model", None);
+            action.connect_activate(move |_, _| {
+                let dialog = gtk::FileChooserNative::builder()
+                    .title("Select a Whisper model")
+                    .accept_label("Use Model")
+                    .modal(true)
+                    .build();
+                dialog.set_transient_for(Some(&window));
+                dialog.set_action(gtk::FileChooserAction::Open);
+
+                let filter = gtk::FileFilter::new();
+                filter.set_name(Some("Whisper model (*.bin)"));
+                filter.add_pattern("*.bin");
+                dialog.add_filter(&filter);
+                dialog.set_filter(&filter);
+
+                let model_label = model_label.clone();
+                dialog.connect_response(move |dialog, response| {
+                    if response != gtk::ResponseType::Accept {
+                        dialog.destroy();
+                        return;
+                    }
+
+                    let Some(file) = dialog.file() else {
+                        dialog.destroy();
+                        return;
+                    };
+
+                    let Some(path) = file.path() else {
+                        dialog.destroy();
+                        return;
+                    };
+
+                    unsafe {
+                        std::env::set_var("ASR_MODEL", &path);
+                    }
+                    apply_model_indicator(&model_label, Some(&path), None);
+                    dialog.destroy();
+                });
+
+                dialog.show();
+            });
+            app.add_action(&action);
+        }
+
+        {
+            let window = window.clone();
+            let action = gio::SimpleAction::new("download_models", None);
+            action.connect_activate(move |_, _| {
+                let dialog = gtk::MessageDialog::builder()
+                    .transient_for(&window)
+                    .modal(true)
+                    .buttons(gtk::ButtonsType::Ok)
+                    .text("Model downloads are not implemented yet.")
+                    .build();
+                dialog.connect_response(|dialog, _| dialog.destroy());
+                dialog.show();
+            });
+            app.add_action(&action);
+        }
+
+        {
+            let action = gio::SimpleAction::new("open_models_folder", None);
+            action.connect_activate(move |_, _| {
+                let dir = asr::cache_models_dir();
+                let uri = gio::File::for_path(&dir).uri();
+                if let Err(err) = gio::AppInfo::launch_default_for_uri(
+                    &uri,
+                    gio::AppLaunchContext::NONE,
+                ) {
+                    eprintln!("[ui] failed to open models folder: {err}");
+                }
+            });
+            app.add_action(&action);
+        }
+
+        {
+            let model_label = model_label.clone();
+            let action = gio::SimpleAction::new("refresh_models", None);
+            action.connect_activate(move |_, _| {
+                let result = asr::discover_model_path();
+                match result {
+                    Ok(ref path) => apply_model_indicator(&model_label, Some(path), None),
+                    Err(err) => apply_model_indicator(&model_label, None, Some(err.to_string())),
+                }
+            });
+            app.add_action(&action);
         }
 
         let drag_gesture = gtk::GestureClick::builder().button(0).build();

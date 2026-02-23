@@ -250,7 +250,7 @@ fn discover_from_directory(dir: &Path) -> Option<PathBuf> {
     candidates.into_iter().next()
 }
 
-fn cache_models_dir() -> PathBuf {
+pub fn cache_models_dir() -> PathBuf {
     if let Ok(path) = std::env::var("VOXPIPE_MODELS_CACHE_DIR") {
         let trimmed = path.trim();
         if !trimmed.is_empty() {
