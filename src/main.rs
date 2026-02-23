@@ -10,11 +10,13 @@ use std::{
 mod asr;
 mod audio;
 mod state;
+mod ui;
 pub mod whisper_rs;
 mod whisper_sys;
 
 use audio::record::Recorder;
 use state::{AppEvent, AppState};
+use ui::transcript::Transcript;
 use whisper_rs::WhisperContext;
 
 const APP_STYLE: &str = include_str!("../assets/style.css");
@@ -90,6 +92,12 @@ fn main() -> glib::ExitCode {
             .spacing(4)
             .build();
         right_controls.add_css_class("hud-controls");
+        let debug_button = gtk::Button::builder()
+            .icon_name("document-edit-symbolic")
+            .tooltip_text("Append test transcript")
+            .build();
+        debug_button.add_css_class("hud-control");
+
         let minimize_button = gtk::Button::builder()
             .icon_name("window-minimize-symbolic")
             .tooltip_text("Minimize")
@@ -100,6 +108,7 @@ fn main() -> glib::ExitCode {
             .tooltip_text("Close")
             .build();
         close_button.add_css_class("hud-control");
+        right_controls.append(&debug_button);
         right_controls.append(&minimize_button);
         right_controls.append(&close_button);
 
@@ -108,12 +117,8 @@ fn main() -> glib::ExitCode {
         top_bar.append(&meter);
         top_bar.append(&right_controls);
 
-        let transcript_view = gtk::TextView::builder()
-            .editable(false)
-            .cursor_visible(false)
-            .wrap_mode(gtk::WrapMode::WordChar)
-            .build();
-        transcript_view.add_css_class("hud-transcript");
+        let transcript = Transcript::new();
+        let transcript_view = transcript.view();
 
         let transcript_scroll = gtk::ScrolledWindow::builder()
             .hexpand(true)
@@ -281,6 +286,18 @@ fn main() -> glib::ExitCode {
             let window = window.clone();
             minimize_button.connect_clicked(move |_| {
                 window.minimize();
+            });
+        }
+
+        {
+            let transcript = transcript.clone();
+            debug_button.connect_clicked(move |_| {
+                let ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_or(0, |dur| dur.as_secs());
+                let header = format!("Debug {ts}");
+                let body = format!("Test line at {ts}");
+                transcript.append_block(&header, &body);
             });
         }
 
