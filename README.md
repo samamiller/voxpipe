@@ -32,9 +32,10 @@ Requirements:
 - C toolchain + CMake + pkg-config
 - Clang/LLVM (required by `bindgen`)
 - System OpenBLAS development package discoverable via `pkg-config`
-- Optional for FFmpeg-backed format decoding (Opus/AAC via `whisper-cli`):
+- Required for FFmpeg-backed format decoding (enabled by default):
   - Debian/Ubuntu: `sudo apt install libavcodec-dev libavformat-dev libavutil-dev libswresample-dev ffmpeg`
   - RHEL/Fedora: `sudo dnf install libavcodec-free-devel libavformat-free-devel libavutil-free-devel libswresample-free-devel ffmpeg`
+  - To disable FFmpeg and limit inputs to WAV, set `VOXPIPE_WHISPER_FFMPEG=0`
 
 Run:
 
@@ -65,12 +66,12 @@ This script:
 
 Optional environment variables:
 - `VOXPIPE_WHISPER_CMAKE_BUILD_TYPE` (default: `Release`)
-- `VOXPIPE_WHISPER_FFMPEG` (default: `0`) enables FFmpeg decode support in `whisper.cpp` example binaries
+- `VOXPIPE_WHISPER_FFMPEG` (default: `1`) enables FFmpeg decode support in `whisper.cpp` example binaries
 - `VOXPIPE_WHISPER_BUILD_EXAMPLES` (default: `1`) controls whether `whisper-cli` and other examples are built
 - `VOXPIPE_WHISPER_MODEL` (path used by dev smoke model-load trigger)
 
 File transcription formats:
-- With `VOXPIPE_WHISPER_FFMPEG=1`, the file picker accepts Opus/AAC and other FFmpeg-supported formats.
+- With `VOXPIPE_WHISPER_FFMPEG=1`, the file picker accepts `audio/*` plus common formats like WAV, MP3, FLAC, M4A, AAC, Opus, and Ogg.
 - Without FFmpeg, only WAV files are accepted.
 
 Example (build with FFmpeg-enabled `whisper-cli`):
