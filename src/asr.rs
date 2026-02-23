@@ -1,4 +1,3 @@
-use serde::Deserialize;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,9 +16,6 @@ pub enum AsrError {
     },
     EmptyTranscript {
         stderr: String,
-    },
-    JsonParse {
-        message: String,
     },
     ModelMissing {
         message: String,
@@ -52,7 +48,6 @@ impl fmt::Display for AsrError {
                     stderr.trim()
                 )
             }
-            Self::JsonParse { message } => write!(f, "whisper-cli JSON parse failed: {message}"),
             Self::ModelMissing {
                 message,
                 fix_command,
@@ -106,83 +101,6 @@ pub fn transcribe(
     Ok(transcript)
 }
 
-pub type ConfidenceSegments = Vec<Vec<(String, f32)>>;
-
-pub fn transcribe_with_confidence(
-    wav_path: impl AsRef<Path>,
-    model_path: impl AsRef<Path>,
-) -> Result<ConfidenceSegments, AsrError> {
-    let wav_path = wav_path.as_ref();
-    let model_path = model_path.as_ref();
-    let cli = resolve_whisper_cli();
-    let bin = cli.binary.to_string_lossy().into_owned();
-
-    let mut cmd = Command::new(&cli.binary);
-    if let Some(lib_dir) = cli.lib_dir {
-        let merged = merge_library_path(&lib_dir);
-        cmd.env("LD_LIBRARY_PATH", merged);
-    }
-    cmd.arg("-m")
-        .arg(model_path)
-        .arg("-f")
-        .arg(wav_path)
-        .args([
-            "-nt",
-            "--output-json-full",
-            "--output-file",
-            "-",
-            "--no-prints",
-        ]);
-
-    let output = cmd
-        .output()
-        .map_err(|_| AsrError::WhisperCliNotFound(bin))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-
-    if !output.status.success() {
-        return Err(AsrError::ProcessFailed {
-            code: output.status.code(),
-            stderr,
-            stdout,
-        });
-    }
-
-    let parsed: JsonTranscript = serde_json::from_str(stdout.trim())
-        .map_err(|err| AsrError::JsonParse { message: err.to_string() })?;
-    let segments = parsed
-        .transcription
-        .into_iter()
-        .map(|segment| match segment.tokens {
-            Some(tokens) if !tokens.is_empty() => tokens
-                .into_iter()
-                .map(|token| (token.text, token.p))
-                .collect(),
-            _ => vec![(segment.text, 1.0)],
-        })
-        .collect();
-
-    Ok(segments)
-}
-
-#[derive(Deserialize)]
-struct JsonTranscript {
-    transcription: Vec<JsonSegment>,
-}
-
-#[derive(Deserialize)]
-struct JsonSegment {
-    text: String,
-    #[serde(default)]
-    tokens: Option<Vec<JsonToken>>,
-}
-
-#[derive(Deserialize)]
-struct JsonToken {
-    text: String,
-    p: f32,
-}
-
 struct WhisperCliLocation {
     binary: PathBuf,
     lib_dir: Option<PathBuf>,
@@ -200,10 +118,6 @@ fn resolve_whisper_cli() -> WhisperCliLocation {
     }
 
     if let Some(local) = discover_local_whisper_cli() {
-        return local;
-    }
-
-    if let Some(local) = discover_exe_relative_whisper_cli() {
         return local;
     }
 
@@ -242,46 +156,6 @@ fn discover_local_whisper_cli() -> Option<WhisperCliLocation> {
         binary: bin.clone(),
         lib_dir: Some(lib_dir.clone()),
     })
-}
-
-fn discover_exe_relative_whisper_cli() -> Option<WhisperCliLocation> {
-    let exe = std::env::current_exe().ok()?;
-    let exe_dir = exe.parent()?;
-    let direct = exe_dir.join("whisper-cli");
-    let libexec = exe_dir.join("..").join("libexec").join("whisper-cli");
-    let lib_voxpipe = exe_dir.join("..").join("lib").join("voxpipe").join("whisper-cli");
-    let candidates = [direct, libexec, lib_voxpipe];
-
-    for candidate in candidates {
-        if !candidate.is_file() {
-            continue;
-        }
-
-        let lib_dir = candidate
-            .parent()
-            .and_then(|parent| {
-                let local_lib = parent.join("lib");
-                if local_lib.is_dir() {
-                    return Some(local_lib);
-                }
-                let sibling_lib = parent.join("..").join("lib");
-                if sibling_lib.is_dir() {
-                    return Some(sibling_lib);
-                }
-                let sibling_voxpipe = parent.join("..").join("lib").join("voxpipe");
-                if sibling_voxpipe.is_dir() {
-                    return Some(sibling_voxpipe);
-                }
-                None
-            });
-
-        return Some(WhisperCliLocation {
-            binary: candidate,
-            lib_dir,
-        });
-    }
-
-    None
 }
 
 fn merge_library_path(prefix: &Path) -> String {
