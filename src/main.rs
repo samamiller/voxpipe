@@ -153,11 +153,11 @@ fn main() -> glib::ExitCode {
         right_controls.append(&minimize_button);
         right_controls.append(&close_button);
 
+        top_bar.append(&model_menu_button);
+        top_bar.append(&model_info_button);
         top_bar.append(&file_button);
         top_bar.append(&mic_button);
         top_bar.append(&status_label);
-        top_bar.append(&model_menu_button);
-        top_bar.append(&model_info_button);
 
         let top_spacer = gtk::Box::builder()
             .hexpand(true)
