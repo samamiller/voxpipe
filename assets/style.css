@@ -22,20 +22,6 @@
   letter-spacing: 0.02em;
 }
 
-.hud-model {
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.08);
-  color: #dbe7f6;
-  font-size: 12px;
-}
-
-.hud-model.hud-model-error {
-  border-color: rgba(255, 120, 120, 0.5);
-  color: #ffc6c6;
-}
-
 .hud-meter trough {
   min-height: 8px;
   border-radius: 999px;

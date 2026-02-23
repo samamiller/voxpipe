@@ -82,13 +82,6 @@ fn main() -> glib::ExitCode {
             .build();
         status_label.add_css_class("hud-status");
 
-        let model_label = gtk::Label::builder()
-            .label("Model")
-            .ellipsize(gtk::pango::EllipsizeMode::Middle)
-            .max_width_chars(16)
-            .build();
-        model_label.add_css_class("hud-model");
-
         let model_menu = gio::Menu::new();
         model_menu.append(Some("Change model…"), Some("app.change_model"));
         model_menu.append(Some("Download models…"), Some("app.download_models"));
@@ -170,7 +163,6 @@ fn main() -> glib::ExitCode {
 
         top_bar.append(&mic_button);
         top_bar.append(&status_label);
-        top_bar.append(&model_label);
         top_bar.append(&model_menu_button);
         top_bar.append(&model_info_button);
         top_bar.append(&meter);
@@ -215,14 +207,6 @@ fn main() -> glib::ExitCode {
         panel.append(&transcript_scroll);
 
         {
-            let result = asr::discover_model_path();
-            match result {
-                Ok(ref path) => apply_model_indicator(&model_label, Some(path), None),
-                Err(err) => apply_model_indicator(&model_label, None, Some(err.to_string())),
-            }
-        }
-
-        {
             let model_info_popover = model_info_popover.clone();
             let model_info_name = model_info_name.clone();
             let model_info_path = model_info_path.clone();
@@ -241,7 +225,6 @@ fn main() -> glib::ExitCode {
 
         {
             let window = window.clone();
-            let model_label = model_label.clone();
             let action = gio::SimpleAction::new("change_model", None);
             action.connect_activate(move |_, _| {
                 let dialog = gtk::FileChooserNative::builder()
@@ -262,7 +245,6 @@ fn main() -> glib::ExitCode {
                 dialog.add_filter(&filter);
                 dialog.set_filter(&filter);
 
-                let model_label = model_label.clone();
                 dialog.connect_response(move |dialog, response| {
                     if response != gtk::ResponseType::Accept {
                         dialog.destroy();
@@ -282,7 +264,6 @@ fn main() -> glib::ExitCode {
                     unsafe {
                         std::env::set_var("ASR_MODEL", &path);
                     }
-                    apply_model_indicator(&model_label, Some(&path), None);
                     dialog.destroy();
                 });
 
@@ -316,14 +297,9 @@ fn main() -> glib::ExitCode {
         }
 
         {
-            let model_label = model_label.clone();
             let action = gio::SimpleAction::new("refresh_models", None);
             action.connect_activate(move |_, _| {
-                let result = asr::discover_model_path();
-                match result {
-                    Ok(ref path) => apply_model_indicator(&model_label, Some(path), None),
-                    Err(err) => apply_model_indicator(&model_label, None, Some(err.to_string())),
-                }
+                let _ = asr::discover_model_path();
             });
             app.add_action(&action);
         }
@@ -395,7 +371,6 @@ fn main() -> glib::ExitCode {
             let mic_button_handler = mic_button.clone();
             let panel = panel.clone();
             let transcript = transcript.clone();
-            let model_label = model_label.clone();
             let file_button_handler = file_button.clone();
 
             mic_button.connect_clicked(move |_| {
@@ -423,13 +398,8 @@ fn main() -> glib::ExitCode {
                     );
 
                     let model_path = match asr::discover_model_path() {
-                        Ok(path) => {
-                            apply_model_indicator(&model_label, Some(&path), None);
-                            path
-                        }
+                        Ok(path) => path,
                         Err(err) => {
-                            let err_text = err.to_string();
-                            apply_model_indicator(&model_label, None, Some(err_text));
                             status_label.set_label(&format!("Status: {err}"));
                             eprintln!("[asr] model discovery failed: {err}");
                             let idle = state.borrow().on_event(AppEvent::TranscriptionReady);
@@ -589,7 +559,6 @@ fn main() -> glib::ExitCode {
             let file_button_handler = file_button.clone();
             let panel = panel.clone();
             let transcript = transcript.clone();
-            let model_label = model_label.clone();
 
             file_button.connect_clicked(move |_| {
                 let dialog = gtk::FileChooserNative::builder()
@@ -620,7 +589,6 @@ fn main() -> glib::ExitCode {
                 let file_button_handler = file_button_handler.clone();
                 let panel = panel.clone();
                 let transcript = transcript.clone();
-                let model_label = model_label.clone();
                 let ffmpeg_enabled = ffmpeg_enabled;
 
                 dialog.connect_response(move |dialog, response| {
@@ -668,13 +636,8 @@ fn main() -> glib::ExitCode {
                     );
 
                     let model_path = match asr::discover_model_path() {
-                        Ok(path) => {
-                            apply_model_indicator(&model_label, Some(&path), None);
-                            path
-                        }
+                        Ok(path) => path,
                         Err(err) => {
-                            let err_text = err.to_string();
-                            apply_model_indicator(&model_label, None, Some(err_text));
                             status_label.set_label(&format!("Status: {err}"));
                             eprintln!("[asr] model discovery failed: {err}");
                             let idle = state.borrow().on_event(AppEvent::TranscriptionReady);
@@ -877,26 +840,6 @@ fn next_wav_path() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |dur| dur.as_millis());
     std::env::temp_dir().join(format!("voxpipe-{ts}.wav"))
-}
-
-fn apply_model_indicator(label: &gtk::Label, path: Option<&std::path::Path>, error: Option<String>) {
-    label.remove_css_class("hud-model-error");
-
-    if let Some(path) = path {
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("model");
-        label.set_label(name);
-        label.set_tooltip_text(Some(&path.display().to_string()));
-        return;
-    }
-
-    if let Some(error) = error {
-        label.set_label("Model missing");
-        label.set_tooltip_text(Some(&error));
-        label.add_css_class("hud-model-error");
-    }
 }
 
 fn update_model_info(
