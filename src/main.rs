@@ -275,8 +275,20 @@ fn main() -> glib::ExitCode {
                         let next = state.borrow().on_event(AppEvent::StartListening);
                         set_state(&state, next, &status_label, &mic_button_handler, &panel);
                     }
-                    AppState::Transcribing => {
+                    AppState::Transcribing | AppState::TranscribingFile { .. } => {
                         status_label.set_label("Status: Transcribing (please wait)");
+                    }
+                    AppState::Error(_) => {
+                        let meter_for_levels = meter.clone();
+                        let wav_path = next_wav_path();
+                        if let Err(err) = recorder.borrow_mut().start(&wav_path, move |level| {
+                            meter_for_levels.set_fraction(level as f64)
+                        }) {
+                            status_label.set_label(&format!("Status: Mic error ({err})"));
+                            return;
+                        }
+                        let next = state.borrow().on_event(AppEvent::StartListening);
+                        set_state(&state, next, &status_label, &mic_button_handler, &panel);
                     }
                 }
             });
@@ -369,6 +381,7 @@ fn apply_state(
     container: &gtk::Box,
 ) {
     status_label.set_label(&format!("Status: {}", state.status_text()));
+    mic_button.set_sensitive(state.mic_enabled());
     if matches!(state, AppState::Listening) {
         mic_button.set_icon_name("media-playback-stop-symbolic");
         mic_button.set_tooltip_text(Some("Stop listening"));
