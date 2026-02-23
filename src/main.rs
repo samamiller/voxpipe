@@ -127,12 +127,6 @@ fn main() -> glib::ExitCode {
         model_info_box.append(&model_info_sys);
         model_info_popover.set_child(Some(&model_info_box));
 
-        let meter = gtk::ProgressBar::builder()
-            .hexpand(true)
-            .show_text(false)
-            .fraction(0.0)
-            .build();
-        meter.add_css_class("hud-meter");
 
         let right_controls = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -164,7 +158,6 @@ fn main() -> glib::ExitCode {
         top_bar.append(&status_label);
         top_bar.append(&model_menu_button);
         top_bar.append(&model_info_button);
-        top_bar.append(&meter);
         top_bar.append(&right_controls);
 
         let transcript = Transcript::new();
@@ -358,7 +351,6 @@ fn main() -> glib::ExitCode {
             let state = Rc::clone(&state);
             let recorder = Rc::clone(&recorder);
             let status_label = status_label.clone();
-            let meter = meter.clone();
             let mic_button = mic_button.clone();
             let mic_button_handler = mic_button.clone();
             let panel = panel.clone();
@@ -378,7 +370,6 @@ fn main() -> glib::ExitCode {
                         return;
                     };
 
-                    meter.set_fraction(0.0);
                     let next = state.borrow().on_event(AppEvent::StopListening);
                     set_state(
                         &state,
@@ -492,10 +483,9 @@ fn main() -> glib::ExitCode {
                     );
                 }
                     AppState::Idle => {
-                        let meter_for_levels = meter.clone();
                         let wav_path = next_wav_path();
                         if let Err(err) = recorder.borrow_mut().start(&wav_path, move |level| {
-                            meter_for_levels.set_fraction(level as f64)
+                            let _ = level;
                         }) {
                             status_label.set_label(&format!("Status: Mic error ({err})"));
                             return;
@@ -514,10 +504,9 @@ fn main() -> glib::ExitCode {
                         status_label.set_label("Status: Transcribing (please wait)");
                     }
                     AppState::Error(_) => {
-                        let meter_for_levels = meter.clone();
                         let wav_path = next_wav_path();
                         if let Err(err) = recorder.borrow_mut().start(&wav_path, move |level| {
-                            meter_for_levels.set_fraction(level as f64)
+                            let _ = level;
                         }) {
                             status_label.set_label(&format!("Status: Mic error ({err})"));
                             return;
