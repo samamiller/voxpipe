@@ -65,6 +65,7 @@ fn main() -> glib::ExitCode {
         let top_bar = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(12)
+            .hexpand(true)
             .build();
         top_bar.add_css_class("hud-topbar");
 
@@ -157,6 +158,12 @@ fn main() -> glib::ExitCode {
         top_bar.append(&status_label);
         top_bar.append(&model_menu_button);
         top_bar.append(&model_info_button);
+
+        let top_spacer = gtk::Box::builder()
+            .hexpand(true)
+            .halign(gtk::Align::Fill)
+            .build();
+        top_bar.append(&top_spacer);
         top_bar.append(&right_controls);
 
         let transcript = Transcript::new();
