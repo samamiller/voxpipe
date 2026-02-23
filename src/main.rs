@@ -175,6 +175,7 @@ fn main() -> glib::ExitCode {
             let mic_button = mic_button.clone();
             let mic_button_handler = mic_button.clone();
             let panel = panel.clone();
+            let transcript = transcript.clone();
 
             mic_button.connect_clicked(move |_| {
                 let current_state = state.borrow().clone();
@@ -215,11 +216,21 @@ fn main() -> glib::ExitCode {
                     let status_done = status_label.clone();
                     let mic_done = mic_button_handler.clone();
                     let panel_done = panel.clone();
+                    let transcript_done = transcript.clone();
                     glib::timeout_add_local(
                         std::time::Duration::from_millis(100),
                         move || match rx.try_recv() {
                             Ok(Ok(text)) => {
                                 eprintln!("[asr] transcript:\n{text}");
+                                let timestamp = match glib::DateTime::now_local() {
+                                    Ok(dt) => dt
+                                        .format("%H:%M:%S")
+                                        .map(|ts| ts.to_string())
+                                        .unwrap_or_else(|_| "unknown".to_string()),
+                                    Err(_) => "unknown".to_string(),
+                                };
+                                let header = format!("Mic ({timestamp})");
+                                transcript_done.append_block(&header, &text);
                                 status_done.set_label("Status: Transcribed");
                                 let idle =
                                     state_done.borrow().on_event(AppEvent::TranscriptionReady);
@@ -235,6 +246,7 @@ fn main() -> glib::ExitCode {
                             Ok(Err(err)) => {
                                 status_done.set_label(&format!("Status: ASR error ({err})"));
                                 eprintln!("[asr] transcription failed: {err}");
+                                transcript_done.append_error(&err);
                                 let idle =
                                     state_done.borrow().on_event(AppEvent::TranscriptionReady);
                                 set_state(
