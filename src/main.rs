@@ -42,22 +42,28 @@ fn main() -> glib::ExitCode {
             .application(app)
             .title("Voxpipe")
             .default_width(420)
-            .default_height(72)
+            .default_height(360)
             .decorated(false)
             .modal(false)
             .build();
         window.set_resizable(false);
         window.add_css_class("hud-window");
 
-        let container = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(12)
+        let panel = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(10)
             .margin_top(10)
             .margin_bottom(10)
             .margin_start(12)
             .margin_end(12)
             .build();
-        container.add_css_class("hud-body");
+        panel.add_css_class("hud-body");
+
+        let top_bar = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(12)
+            .build();
+        top_bar.add_css_class("hud-topbar");
 
         let mic_button = gtk::Button::builder()
             .icon_name("audio-input-microphone-symbolic")
@@ -97,19 +103,36 @@ fn main() -> glib::ExitCode {
         right_controls.append(&minimize_button);
         right_controls.append(&close_button);
 
-        container.append(&mic_button);
-        container.append(&status_label);
-        container.append(&meter);
-        container.append(&right_controls);
+        top_bar.append(&mic_button);
+        top_bar.append(&status_label);
+        top_bar.append(&meter);
+        top_bar.append(&right_controls);
+
+        let transcript_view = gtk::TextView::builder()
+            .editable(false)
+            .cursor_visible(false)
+            .wrap_mode(gtk::WrapMode::WordChar)
+            .build();
+        transcript_view.add_css_class("hud-transcript");
+
+        let transcript_scroll = gtk::ScrolledWindow::builder()
+            .hexpand(true)
+            .vexpand(true)
+            .child(&transcript_view)
+            .build();
+        transcript_scroll.add_css_class("hud-transcript-scroll");
+
+        panel.append(&top_bar);
+        panel.append(&transcript_scroll);
 
         let drag_gesture = gtk::GestureClick::builder().button(0).build();
         {
-            let container = container.clone();
+            let top_bar = top_bar.clone();
             let window = window.clone();
             drag_gesture.connect_pressed(move |gesture, _, x, y| {
                 let button = gesture.current_button() as i32;
                 let timestamp = gesture.current_event_time();
-                let on_control = container
+                let on_control = top_bar
                     .pick(x, y, gtk::PickFlags::DEFAULT)
                     .map(|widget| {
                         widget.is::<gtk::Button>()
@@ -132,12 +155,12 @@ fn main() -> glib::ExitCode {
                 }
             });
         }
-        container.add_controller(drag_gesture);
-        window.set_content(Some(&container));
+        top_bar.add_controller(drag_gesture);
+        window.set_content(Some(&panel));
 
         let state = Rc::new(RefCell::new(AppState::Idle));
         let recorder = Rc::new(RefCell::new(Recorder::new()));
-        apply_state(&state.borrow(), &status_label, &mic_button, &container);
+        apply_state(&state.borrow(), &status_label, &mic_button, &panel);
 
         {
             let state = Rc::clone(&state);
@@ -146,7 +169,7 @@ fn main() -> glib::ExitCode {
             let meter = meter.clone();
             let mic_button = mic_button.clone();
             let mic_button_handler = mic_button.clone();
-            let container = container.clone();
+            let panel = panel.clone();
 
             mic_button.connect_clicked(move |_| {
                 let current_state = state.borrow().clone();
@@ -163,7 +186,7 @@ fn main() -> glib::ExitCode {
 
                     meter.set_fraction(0.0);
                     let next = state.borrow().on_event(AppEvent::StopListening);
-                    set_state(&state, next, &status_label, &mic_button_handler, &container);
+                    set_state(&state, next, &status_label, &mic_button_handler, &panel);
 
                     let model_path = match asr::discover_model_path() {
                         Ok(path) => path,
@@ -171,7 +194,7 @@ fn main() -> glib::ExitCode {
                             status_label.set_label(&format!("Status: {err}"));
                             eprintln!("[asr] model discovery failed: {err}");
                             let idle = state.borrow().on_event(AppEvent::TranscriptionReady);
-                            set_state(&state, idle, &status_label, &mic_button_handler, &container);
+                            set_state(&state, idle, &status_label, &mic_button_handler, &panel);
                             return;
                         }
                     };
@@ -186,7 +209,7 @@ fn main() -> glib::ExitCode {
                     let state_done = Rc::clone(&state);
                     let status_done = status_label.clone();
                     let mic_done = mic_button_handler.clone();
-                    let container_done = container.clone();
+                    let panel_done = panel.clone();
                     glib::timeout_add_local(
                         std::time::Duration::from_millis(100),
                         move || match rx.try_recv() {
@@ -200,7 +223,7 @@ fn main() -> glib::ExitCode {
                                     idle,
                                     &status_done,
                                     &mic_done,
-                                    &container_done,
+                                    &panel_done,
                                 );
                                 glib::ControlFlow::Break
                             }
@@ -214,7 +237,7 @@ fn main() -> glib::ExitCode {
                                     idle,
                                     &status_done,
                                     &mic_done,
-                                    &container_done,
+                                    &panel_done,
                                 );
                                 glib::ControlFlow::Break
                             }
@@ -228,7 +251,7 @@ fn main() -> glib::ExitCode {
                                     idle,
                                     &status_done,
                                     &mic_done,
-                                    &container_done,
+                                    &panel_done,
                                 );
                                 glib::ControlFlow::Break
                             }
@@ -245,7 +268,7 @@ fn main() -> glib::ExitCode {
                             return;
                         }
                         let next = state.borrow().on_event(AppEvent::StartListening);
-                        set_state(&state, next, &status_label, &mic_button_handler, &container);
+                        set_state(&state, next, &status_label, &mic_button_handler, &panel);
                     }
                     AppState::Transcribing => {
                         status_label.set_label("Status: Transcribing (please wait)");

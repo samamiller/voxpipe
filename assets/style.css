@@ -12,6 +12,10 @@
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
 }
 
+.hud-topbar {
+  margin-bottom: 2px;
+}
+
 .hud-status {
   color: #e6edf7;
   font-weight: 600;
@@ -54,4 +58,17 @@
     0 14px 32px rgba(0, 0, 0, 0.45),
     0 0 22px rgba(87, 211, 255, 0.38);
   border-color: rgba(87, 211, 255, 0.42);
+}
+
+.hud-transcript-scroll {
+  min-height: 180px;
+  border-radius: 12px;
+  background: rgba(10, 12, 16, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hud-transcript {
+  background: transparent;
+  color: #e6edf7;
+  padding: 8px;
 }
