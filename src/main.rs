@@ -99,6 +99,12 @@ fn main() -> glib::ExitCode {
             .spacing(4)
             .build();
         right_controls.add_css_class("hud-controls");
+        let file_button = gtk::Button::builder()
+            .icon_name("document-open-symbolic")
+            .tooltip_text("Transcribe file")
+            .build();
+        file_button.add_css_class("hud-control");
+
         let debug_button = gtk::Button::builder()
             .icon_name("document-edit-symbolic")
             .tooltip_text("Append test transcript")
@@ -115,6 +121,7 @@ fn main() -> glib::ExitCode {
             .tooltip_text("Close")
             .build();
         close_button.add_css_class("hud-control");
+        right_controls.append(&file_button);
         right_controls.append(&debug_button);
         right_controls.append(&minimize_button);
         right_controls.append(&close_button);
@@ -181,7 +188,7 @@ fn main() -> glib::ExitCode {
 
         let state = Rc::new(RefCell::new(AppState::Idle));
         let recorder = Rc::new(RefCell::new(Recorder::new()));
-        apply_state(&state.borrow(), &status_label, &mic_button, &panel);
+        apply_state(&state.borrow(), &status_label, &mic_button, &file_button, &panel);
 
         {
             let state = Rc::clone(&state);
@@ -193,6 +200,7 @@ fn main() -> glib::ExitCode {
             let panel = panel.clone();
             let transcript = transcript.clone();
             let model_label = model_label.clone();
+            let file_button_handler = file_button.clone();
 
             mic_button.connect_clicked(move |_| {
                 let current_state = state.borrow().clone();
@@ -209,7 +217,14 @@ fn main() -> glib::ExitCode {
 
                     meter.set_fraction(0.0);
                     let next = state.borrow().on_event(AppEvent::StopListening);
-                    set_state(&state, next, &status_label, &mic_button_handler, &panel);
+                    set_state(
+                        &state,
+                        next,
+                        &status_label,
+                        &mic_button_handler,
+                        &file_button_handler,
+                        &panel,
+                    );
 
                     let model_path = match asr::discover_model_path() {
                         Ok(path) => {
@@ -222,13 +237,20 @@ fn main() -> glib::ExitCode {
                             status_label.set_label(&format!("Status: {err}"));
                             eprintln!("[asr] model discovery failed: {err}");
                             let idle = state.borrow().on_event(AppEvent::TranscriptionReady);
-                            set_state(&state, idle, &status_label, &mic_button_handler, &panel);
+                            set_state(
+                                &state,
+                                idle,
+                                &status_label,
+                                &mic_button_handler,
+                                &file_button_handler,
+                                &panel,
+                            );
                             return;
                         }
                     };
 
                     let (tx, rx) = mpsc::channel::<Result<String, String>>();
-                    std::thread::spawn(move || {
+                    let handle = std::thread::spawn(move || {
                         let result = asr::transcribe(&wav_path, &model_path, &["-nt"])
                             .map_err(|err| err.to_string());
                         let _ = tx.send(result);
@@ -237,12 +259,17 @@ fn main() -> glib::ExitCode {
                     let state_done = Rc::clone(&state);
                     let status_done = status_label.clone();
                     let mic_done = mic_button_handler.clone();
+                    let file_done = file_button_handler.clone();
                     let panel_done = panel.clone();
                     let transcript_done = transcript.clone();
+                    let mut handle = Some(handle);
                     glib::timeout_add_local(
                         std::time::Duration::from_millis(100),
                         move || match rx.try_recv() {
                             Ok(Ok(text)) => {
+                                if let Some(handle) = handle.take() {
+                                    let _ = handle.join();
+                                }
                                 eprintln!("[asr] transcript:\n{text}");
                                 let timestamp = match glib::DateTime::now_local() {
                                     Ok(dt) => dt
@@ -261,11 +288,15 @@ fn main() -> glib::ExitCode {
                                     idle,
                                     &status_done,
                                     &mic_done,
+                                    &file_done,
                                     &panel_done,
                                 );
                                 glib::ControlFlow::Break
                             }
                             Ok(Err(err)) => {
+                                if let Some(handle) = handle.take() {
+                                    let _ = handle.join();
+                                }
                                 status_done.set_label(&format!("Status: ASR error ({err})"));
                                 eprintln!("[asr] transcription failed: {err}");
                                 transcript_done.append_error(&err);
@@ -276,12 +307,16 @@ fn main() -> glib::ExitCode {
                                     idle,
                                     &status_done,
                                     &mic_done,
+                                    &file_done,
                                     &panel_done,
                                 );
                                 glib::ControlFlow::Break
                             }
                             Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
                             Err(mpsc::TryRecvError::Disconnected) => {
+                                if let Some(handle) = handle.take() {
+                                    let _ = handle.join();
+                                }
                                 status_done.set_label("Status: ASR worker disconnected");
                                 let idle =
                                     state_done.borrow().on_event(AppEvent::TranscriptionReady);
@@ -290,6 +325,7 @@ fn main() -> glib::ExitCode {
                                     idle,
                                     &status_done,
                                     &mic_done,
+                                    &file_done,
                                     &panel_done,
                                 );
                                 glib::ControlFlow::Break
@@ -307,7 +343,14 @@ fn main() -> glib::ExitCode {
                             return;
                         }
                         let next = state.borrow().on_event(AppEvent::StartListening);
-                        set_state(&state, next, &status_label, &mic_button_handler, &panel);
+                        set_state(
+                            &state,
+                            next,
+                            &status_label,
+                            &mic_button_handler,
+                            &file_button_handler,
+                            &panel,
+                        );
                     }
                     AppState::Transcribing | AppState::TranscribingFile { .. } => {
                         status_label.set_label("Status: Transcribing (please wait)");
@@ -322,7 +365,14 @@ fn main() -> glib::ExitCode {
                             return;
                         }
                         let next = state.borrow().on_event(AppEvent::StartListening);
-                        set_state(&state, next, &status_label, &mic_button_handler, &panel);
+                        set_state(
+                            &state,
+                            next,
+                            &status_label,
+                            &mic_button_handler,
+                            &file_button_handler,
+                            &panel,
+                        );
                     }
                 }
             });
@@ -332,6 +382,180 @@ fn main() -> glib::ExitCode {
             let window = window.clone();
             minimize_button.connect_clicked(move |_| {
                 window.minimize();
+            });
+        }
+
+        {
+            let window = window.clone();
+            let state = Rc::clone(&state);
+            let status_label = status_label.clone();
+            let mic_button_handler = mic_button.clone();
+            let file_button_handler = file_button.clone();
+            let panel = panel.clone();
+            let transcript = transcript.clone();
+            let model_label = model_label.clone();
+
+            file_button.connect_clicked(move |_| {
+                let dialog = gtk::FileChooserNative::builder()
+                    .title("Transcribe audio file")
+                    .accept_label("Transcribe")
+                    .modal(true)
+                    .build();
+                dialog.set_transient_for(Some(&window));
+                dialog.set_action(gtk::FileChooserAction::Open);
+
+                let filter = gtk::FileFilter::new();
+                filter.set_name(Some("WAV audio"));
+                filter.add_pattern("*.wav");
+                dialog.add_filter(&filter);
+                dialog.set_filter(&filter);
+
+                let state = Rc::clone(&state);
+                let status_label = status_label.clone();
+                let mic_button_handler = mic_button_handler.clone();
+                let file_button_handler = file_button_handler.clone();
+                let panel = panel.clone();
+                let transcript = transcript.clone();
+                let model_label = model_label.clone();
+
+                dialog.connect_response(move |dialog, response| {
+                    if response != gtk::ResponseType::Accept {
+                        dialog.destroy();
+                        return;
+                    }
+
+                    let Some(file) = dialog.file() else {
+                        status_label.set_label("Status: File path unavailable");
+                        dialog.destroy();
+                        return;
+                    };
+
+                    let Some(path) = file.path() else {
+                        status_label.set_label("Status: File path unavailable");
+                        dialog.destroy();
+                        return;
+                    };
+
+                    let next =
+                        state
+                            .borrow()
+                            .on_event(AppEvent::StartFileTranscription(path.clone()));
+                    set_state(
+                        &state,
+                        next,
+                        &status_label,
+                        &mic_button_handler,
+                        &file_button_handler,
+                        &panel,
+                    );
+
+                    let model_path = match asr::discover_model_path() {
+                        Ok(path) => {
+                            apply_model_indicator(&model_label, Some(&path), None);
+                            path
+                        }
+                        Err(err) => {
+                            let err_text = err.to_string();
+                            apply_model_indicator(&model_label, None, Some(err_text));
+                            status_label.set_label(&format!("Status: {err}"));
+                            eprintln!("[asr] model discovery failed: {err}");
+                            let idle = state.borrow().on_event(AppEvent::TranscriptionReady);
+                            set_state(
+                                &state,
+                                idle,
+                                &status_label,
+                                &mic_button_handler,
+                                &file_button_handler,
+                                &panel,
+                            );
+                            return;
+                        }
+                    };
+
+                    let (tx, rx) = mpsc::channel::<Result<String, String>>();
+                    let path_for_worker = path.clone();
+                    let handle = std::thread::spawn(move || {
+                        let result = asr::transcribe(&path_for_worker, &model_path, &["-nt"])
+                            .map_err(|err| err.to_string());
+                        let _ = tx.send(result);
+                    });
+
+                    let state_done = Rc::clone(&state);
+                    let status_done = status_label.clone();
+                    let mic_done = mic_button_handler.clone();
+                    let file_done = file_button_handler.clone();
+                    let panel_done = panel.clone();
+                    let transcript_done = transcript.clone();
+                    let path_for_header = path.clone();
+                    let mut handle = Some(handle);
+                    glib::timeout_add_local(
+                        std::time::Duration::from_millis(100),
+                        move || match rx.try_recv() {
+                            Ok(Ok(text)) => {
+                                if let Some(handle) = handle.take() {
+                                    let _ = handle.join();
+                                }
+                                let name = path_for_header
+                                    .file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or("file");
+                                let header = format!("File: {name}");
+                                transcript_done.append_block(&header, &text);
+                                status_done.set_label("Status: Transcribed");
+                                let idle =
+                                    state_done.borrow().on_event(AppEvent::TranscriptionReady);
+                                set_state(
+                                    &state_done,
+                                    idle,
+                                    &status_done,
+                                    &mic_done,
+                                    &file_done,
+                                    &panel_done,
+                                );
+                                glib::ControlFlow::Break
+                            }
+                            Ok(Err(err)) => {
+                                if let Some(handle) = handle.take() {
+                                    let _ = handle.join();
+                                }
+                                status_done.set_label(&format!("Status: ASR error ({err})"));
+                                transcript_done.append_error(&err);
+                                let idle =
+                                    state_done.borrow().on_event(AppEvent::TranscriptionReady);
+                                set_state(
+                                    &state_done,
+                                    idle,
+                                    &status_done,
+                                    &mic_done,
+                                    &file_done,
+                                    &panel_done,
+                                );
+                                glib::ControlFlow::Break
+                            }
+                            Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                            Err(mpsc::TryRecvError::Disconnected) => {
+                                if let Some(handle) = handle.take() {
+                                    let _ = handle.join();
+                                }
+                                status_done.set_label("Status: ASR worker disconnected");
+                                let idle =
+                                    state_done.borrow().on_event(AppEvent::TranscriptionReady);
+                                set_state(
+                                    &state_done,
+                                    idle,
+                                    &status_done,
+                                    &mic_done,
+                                    &file_done,
+                                    &panel_done,
+                                );
+                                glib::ControlFlow::Break
+                            }
+                        },
+                    );
+                    dialog.destroy();
+                });
+
+                dialog.show();
             });
         }
 
@@ -402,20 +626,23 @@ fn set_state(
     next: AppState,
     status_label: &gtk::Label,
     mic_button: &gtk::Button,
+    file_button: &gtk::Button,
     container: &gtk::Box,
 ) {
     *state.borrow_mut() = next.clone();
-    apply_state(&next, status_label, mic_button, container);
+    apply_state(&next, status_label, mic_button, file_button, container);
 }
 
 fn apply_state(
     state: &AppState,
     status_label: &gtk::Label,
     mic_button: &gtk::Button,
+    file_button: &gtk::Button,
     container: &gtk::Box,
 ) {
     status_label.set_label(&format!("Status: {}", state.status_text()));
     mic_button.set_sensitive(state.mic_enabled());
+    file_button.set_sensitive(state.file_enabled());
     if matches!(state, AppState::Listening) {
         mic_button.set_icon_name("media-playback-stop-symbolic");
         mic_button.set_tooltip_text(Some("Stop listening"));
