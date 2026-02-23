@@ -47,7 +47,7 @@ fn main() -> glib::ExitCode {
             .title("Voxpipe")
             .default_width(420)
             .default_height(360)
-            .decorated(false)
+            .decorated(true)
             .modal(false)
             .build();
         window.add_css_class("hud-window");
