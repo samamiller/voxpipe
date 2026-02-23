@@ -55,7 +55,7 @@ impl Transcript {
         self.buffer.text(&start, &end, true).to_string()
     }
 
-    pub fn word_at_point(&self, x: f64, y: f64) -> Option<String> {
+    pub fn word_at_point(&self, x: f64, y: f64) -> Option<(String, i32, i32)> {
         let (bx, by) = self
             .view
             .window_to_buffer_coords(TextWindowType::Text, x as i32, y as i32);
@@ -75,8 +75,16 @@ impl Transcript {
         if trimmed.is_empty() {
             None
         } else {
-            Some(trimmed.to_string())
+            Some((trimmed.to_string(), start.offset(), end.offset()))
         }
+    }
+
+    pub fn replace_range(&self, start: i32, end: i32, text: &str) {
+        let mut start_iter = self.buffer.iter_at_offset(start);
+        let mut end_iter = self.buffer.iter_at_offset(end);
+        self.buffer.delete(&mut start_iter, &mut end_iter);
+        self.buffer.insert(&mut start_iter, text);
+        self.scroll_to_end();
     }
 
     fn append_text(&self, text: &str) {

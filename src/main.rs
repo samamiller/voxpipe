@@ -2,7 +2,9 @@ use adw::prelude::*;
 use gtk::gio;
 use std::{
     cell::RefCell,
+    collections::HashSet,
     path::PathBuf,
+    process::{Command, Stdio},
     rc::Rc,
     sync::mpsc,
     time::{SystemTime, UNIX_EPOCH},
@@ -22,6 +24,127 @@ use ui::transcript::Transcript;
 use whisper_rs::WhisperContext;
 
 const APP_STYLE: &str = include_str!("../assets/style.css");
+
+fn set_suggestion_rows(
+    container: &gtk::Box,
+    items: &[String],
+    handler: Option<Rc<dyn Fn(String)>>,
+) {
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+
+    if items.is_empty() {
+        let label = gtk::Label::builder()
+            .label("No suggestions")
+            .xalign(0.0)
+            .build();
+        container.append(&label);
+        return;
+    }
+
+    for item in items {
+        if let Some(handler) = handler.clone() {
+            let text = item.clone();
+            let button = gtk::Button::with_label(&text);
+            button.add_css_class("hud-control");
+            button.connect_clicked(move |_| {
+                handler(text.clone());
+            });
+            container.append(&button);
+        } else {
+            let label = gtk::Label::builder().label(item).xalign(0.0).build();
+            container.append(&label);
+        }
+    }
+}
+
+fn fetch_spell_suggestions(word: &str) -> Vec<String> {
+    for tool in ["enchant-2", "enchant", "aspell"] {
+        let output = match run_spell_command(tool, word) {
+            Some(output) => output,
+            None => continue,
+        };
+        let suggestions = parse_spell_output(&output, word);
+        if !suggestions.is_empty() {
+            return suggestions;
+        }
+        if output.lines().any(|line| line.starts_with('*')) {
+            return Vec::new();
+        }
+    }
+    Vec::new()
+}
+
+fn run_spell_command(tool: &str, word: &str) -> Option<String> {
+    let mut cmd = Command::new(tool);
+    cmd.arg("-a")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    let mut child = cmd.spawn().ok()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        let _ = writeln!(stdin, "{word}");
+    }
+    let output = child.wait_with_output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn parse_spell_output(output: &str, word: &str) -> Vec<String> {
+    for line in output.lines() {
+        let line = line.trim();
+        if line.starts_with('&') {
+            if let Some((_, rest)) = line.split_once(':') {
+                return rest
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty() && !s.eq_ignore_ascii_case(word))
+                    .collect();
+            }
+        } else if line.starts_with('*') || line.starts_with('#') {
+            return Vec::new();
+        }
+    }
+    Vec::new()
+}
+
+fn fetch_thesaurus_suggestions(word: &str) -> Vec<String> {
+    let output = Command::new("wn")
+        .arg(word)
+        .arg("-syns")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output();
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut seen = HashSet::new();
+    let mut suggestions = Vec::new();
+    for line in text.lines() {
+        let Some((_, rest)) = line.split_once("=>") else {
+            continue;
+        };
+        for item in rest.split(',') {
+            let trimmed = item.trim();
+            if trimmed.is_empty() || trimmed.eq_ignore_ascii_case(word) {
+                continue;
+            }
+            if seen.insert(trimmed.to_string()) {
+                suggestions.push(trimmed.to_string());
+            }
+        }
+    }
+    suggestions
+}
 
 fn main() -> glib::ExitCode {
     let app = adw::Application::builder()
@@ -203,12 +326,22 @@ fn main() -> glib::ExitCode {
         transcript_context.set_parent(&transcript_view);
         let transcript_context_label = gtk::Label::builder().xalign(0.0).build();
         let transcript_context_copy = gtk::Button::with_label("Copy word");
-        let transcript_context_spell = gtk::Button::with_label("Spellcheck…");
-        transcript_context_spell.set_sensitive(false);
-        transcript_context_spell.set_tooltip_text(Some("Coming soon"));
-        let transcript_context_thesaurus = gtk::Button::with_label("Thesaurus…");
-        transcript_context_thesaurus.set_sensitive(false);
-        transcript_context_thesaurus.set_tooltip_text(Some("Coming soon"));
+        let spell_header = gtk::Label::builder()
+            .label("Spellcheck")
+            .xalign(0.0)
+            .build();
+        let spell_suggestions = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(4)
+            .build();
+        let thesaurus_header = gtk::Label::builder()
+            .label("Thesaurus")
+            .xalign(0.0)
+            .build();
+        let thesaurus_suggestions = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(4)
+            .build();
         let transcript_context_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(6)
@@ -218,11 +351,26 @@ fn main() -> glib::ExitCode {
             .margin_end(10)
             .build();
         transcript_context_box.append(&transcript_context_label);
+        transcript_context_box.append(&spell_header);
+        transcript_context_box.append(&spell_suggestions);
+        transcript_context_box.append(&thesaurus_header);
+        transcript_context_box.append(&thesaurus_suggestions);
         transcript_context_box.append(&transcript_context_copy);
-        transcript_context_box.append(&transcript_context_spell);
-        transcript_context_box.append(&transcript_context_thesaurus);
         transcript_context.set_child(Some(&transcript_context_box));
         let transcript_context_word = Rc::new(RefCell::new(String::new()));
+        let transcript_context_range = Rc::new(RefCell::new(None::<(i32, i32)>));
+        let replace_handler = {
+            let transcript = transcript.clone();
+            let transcript_context = transcript_context.clone();
+            let transcript_context_range = Rc::clone(&transcript_context_range);
+            Rc::new(move |replacement: String| {
+                let Some((start, end)) = *transcript_context_range.borrow() else {
+                    return;
+                };
+                transcript.replace_range(start, end, &replacement);
+                transcript_context.popdown();
+            })
+        };
 
         let transcript_scroll = gtk::ScrolledWindow::builder()
             .hexpand(true)
@@ -239,14 +387,83 @@ fn main() -> glib::ExitCode {
             let transcript_context = transcript_context.clone();
             let transcript_context_label = transcript_context_label.clone();
             let transcript_context_word = Rc::clone(&transcript_context_word);
+            let transcript_context_range = Rc::clone(&transcript_context_range);
             let transcript = transcript.clone();
+            let spell_suggestions = spell_suggestions.clone();
+            let thesaurus_suggestions = thesaurus_suggestions.clone();
+            let replace_handler = replace_handler.clone();
             let context_gesture = gtk::GestureClick::builder().button(3).build();
             context_gesture.connect_pressed(move |_, _, x, y| {
-                let Some(word) = transcript.word_at_point(x, y) else {
+                let Some((word, start, end)) = transcript.word_at_point(x, y) else {
                     return;
                 };
                 *transcript_context_word.borrow_mut() = word.clone();
+                *transcript_context_range.borrow_mut() = Some((start, end));
                 transcript_context_label.set_label(&format!("Word: {word}"));
+
+                set_suggestion_rows(&spell_suggestions, &["Loading…".to_string()], None);
+                set_suggestion_rows(&thesaurus_suggestions, &["Loading…".to_string()], None);
+
+                let word_for_worker = word.clone();
+                let spell_target = spell_suggestions.clone();
+                let thesaurus_target = thesaurus_suggestions.clone();
+                let replace_handler = replace_handler.clone();
+                let (tx, rx) = mpsc::channel::<(Vec<String>, Vec<String>)>();
+                std::thread::spawn(move || {
+                    let spell = fetch_spell_suggestions(&word_for_worker);
+                    let thesaurus = fetch_thesaurus_suggestions(&word_for_worker);
+                    let _ = tx.send((spell, thesaurus));
+                });
+                glib::timeout_add_local(
+                    std::time::Duration::from_millis(50),
+                    move || match rx.try_recv() {
+                        Ok((spell, thesaurus)) => {
+                            let replace_handler = replace_handler.clone();
+                            if spell.is_empty() {
+                                set_suggestion_rows(
+                                    &spell_target,
+                                    &["No suggestions".to_string()],
+                                    None,
+                                );
+                            } else {
+                                set_suggestion_rows(
+                                    &spell_target,
+                                    &spell,
+                                    Some(replace_handler.clone()),
+                                );
+                            }
+
+                            if thesaurus.is_empty() {
+                                set_suggestion_rows(
+                                    &thesaurus_target,
+                                    &["No suggestions".to_string()],
+                                    None,
+                                );
+                            } else {
+                                set_suggestion_rows(
+                                    &thesaurus_target,
+                                    &thesaurus,
+                                    Some(replace_handler),
+                                );
+                            }
+                            glib::ControlFlow::Break
+                        }
+                        Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                        Err(mpsc::TryRecvError::Disconnected) => {
+                            set_suggestion_rows(
+                                &spell_target,
+                                &["No suggestions".to_string()],
+                                None,
+                            );
+                            set_suggestion_rows(
+                                &thesaurus_target,
+                                &["No suggestions".to_string()],
+                                None,
+                            );
+                            glib::ControlFlow::Break
+                        }
+                    },
+                );
                 let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
                 transcript_context.set_pointing_to(Some(&rect));
                 transcript_context.popup();
@@ -256,6 +473,7 @@ fn main() -> glib::ExitCode {
 
         {
             let transcript_context_word = Rc::clone(&transcript_context_word);
+            let transcript_context = transcript_context.clone();
             transcript_context_copy.connect_clicked(move |_| {
                 let word = transcript_context_word.borrow().trim().to_string();
                 if word.is_empty() {
@@ -264,6 +482,7 @@ fn main() -> glib::ExitCode {
                 if let Some(display) = gtk::gdk::Display::default() {
                     display.clipboard().set_text(&word);
                 }
+                transcript_context.popdown();
             });
         }
 
