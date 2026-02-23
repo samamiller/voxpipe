@@ -11,8 +11,8 @@ impl Transcript {
         let buffer = gtk::TextBuffer::new(None);
         let view = gtk::TextView::builder()
             .buffer(&buffer)
-            .editable(false)
-            .cursor_visible(false)
+            .editable(true)
+            .cursor_visible(true)
             .wrap_mode(gtk::WrapMode::WordChar)
             .build();
         view.add_css_class("hud-transcript");
