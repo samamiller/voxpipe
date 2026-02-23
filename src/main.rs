@@ -564,8 +564,11 @@ fn main() -> glib::ExitCode {
                 let ffmpeg_enabled = asr::ffmpeg_enabled();
                 let filter = gtk::FileFilter::new();
                 if ffmpeg_enabled {
-                    filter.set_name(Some("Audio files (*.wav, *.opus, *.ogg, *.m4a, *.aac)"));
-                    for pattern in ["*.wav", "*.opus", "*.ogg", "*.m4a", "*.aac"] {
+                    filter.set_name(Some("Audio files"));
+                    filter.add_mime_type("audio/*");
+                    for pattern in [
+                        "*.wav", "*.mp3", "*.flac", "*.m4a", "*.aac", "*.opus", "*.ogg", "*.oga",
+                    ] {
                         filter.add_pattern(pattern);
                     }
                 } else {
