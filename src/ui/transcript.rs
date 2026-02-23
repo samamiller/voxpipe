@@ -1,5 +1,4 @@
 use gtk::prelude::*;
-use gtk::TextWindowType;
 
 #[derive(Clone)]
 pub struct Transcript {
@@ -12,8 +11,8 @@ impl Transcript {
         let buffer = gtk::TextBuffer::new(None);
         let view = gtk::TextView::builder()
             .buffer(&buffer)
-            .editable(true)
-            .cursor_visible(true)
+            .editable(false)
+            .cursor_visible(false)
             .wrap_mode(gtk::WrapMode::WordChar)
             .build();
         view.add_css_class("hud-transcript");
@@ -53,38 +52,6 @@ impl Transcript {
         let start = self.buffer.start_iter();
         let end = self.buffer.end_iter();
         self.buffer.text(&start, &end, true).to_string()
-    }
-
-    pub fn word_at_point(&self, x: f64, y: f64) -> Option<(String, i32, i32)> {
-        let (bx, by) = self
-            .view
-            .window_to_buffer_coords(TextWindowType::Text, x as i32, y as i32);
-        let iter = self.view.iter_at_location(bx, by)?;
-        if !iter.inside_word() {
-            return None;
-        }
-
-        let mut start = iter.clone();
-        start.backward_word_start();
-        let mut end = iter.clone();
-        end.forward_word_end();
-
-        self.buffer.select_range(&start, &end);
-        let word = self.buffer.text(&start, &end, true).to_string();
-        let trimmed = word.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some((trimmed.to_string(), start.offset(), end.offset()))
-        }
-    }
-
-    pub fn replace_range(&self, start: i32, end: i32, text: &str) {
-        let mut start_iter = self.buffer.iter_at_offset(start);
-        let mut end_iter = self.buffer.iter_at_offset(end);
-        self.buffer.delete(&mut start_iter, &mut end_iter);
-        self.buffer.insert(&mut start_iter, text);
-        self.scroll_to_end();
     }
 
     fn append_text(&self, text: &str) {
