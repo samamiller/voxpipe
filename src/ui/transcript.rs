@@ -1,4 +1,5 @@
 use gtk::prelude::*;
+use gtk::TextWindowType;
 
 #[derive(Clone)]
 pub struct Transcript {
@@ -52,6 +53,30 @@ impl Transcript {
         let start = self.buffer.start_iter();
         let end = self.buffer.end_iter();
         self.buffer.text(&start, &end, true).to_string()
+    }
+
+    pub fn word_at_point(&self, x: f64, y: f64) -> Option<String> {
+        let (bx, by) = self
+            .view
+            .window_to_buffer_coords(TextWindowType::Text, x as i32, y as i32);
+        let iter = self.view.iter_at_location(bx, by)?;
+        if !iter.inside_word() {
+            return None;
+        }
+
+        let mut start = iter.clone();
+        start.backward_word_start();
+        let mut end = iter.clone();
+        end.forward_word_end();
+
+        self.buffer.select_range(&start, &end);
+        let word = self.buffer.text(&start, &end, true).to_string();
+        let trimmed = word.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
     }
 
     fn append_text(&self, text: &str) {

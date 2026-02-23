@@ -198,6 +198,32 @@ fn main() -> glib::ExitCode {
         transcript_header.append(&transcript_copy_button);
         transcript_header.append(&transcript_clear_button);
 
+        let transcript_context = gtk::Popover::new();
+        transcript_context.set_has_arrow(true);
+        transcript_context.set_parent(&transcript_view);
+        let transcript_context_label = gtk::Label::builder().xalign(0.0).build();
+        let transcript_context_copy = gtk::Button::with_label("Copy word");
+        let transcript_context_spell = gtk::Button::with_label("Spellcheck…");
+        transcript_context_spell.set_sensitive(false);
+        transcript_context_spell.set_tooltip_text(Some("Coming soon"));
+        let transcript_context_thesaurus = gtk::Button::with_label("Thesaurus…");
+        transcript_context_thesaurus.set_sensitive(false);
+        transcript_context_thesaurus.set_tooltip_text(Some("Coming soon"));
+        let transcript_context_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(6)
+            .margin_top(8)
+            .margin_bottom(8)
+            .margin_start(10)
+            .margin_end(10)
+            .build();
+        transcript_context_box.append(&transcript_context_label);
+        transcript_context_box.append(&transcript_context_copy);
+        transcript_context_box.append(&transcript_context_spell);
+        transcript_context_box.append(&transcript_context_thesaurus);
+        transcript_context.set_child(Some(&transcript_context_box));
+        let transcript_context_word = Rc::new(RefCell::new(String::new()));
+
         let transcript_scroll = gtk::ScrolledWindow::builder()
             .hexpand(true)
             .vexpand(true)
@@ -208,6 +234,38 @@ fn main() -> glib::ExitCode {
         panel.append(&top_bar);
         panel.append(&transcript_header);
         panel.append(&transcript_scroll);
+
+        {
+            let transcript_context = transcript_context.clone();
+            let transcript_context_label = transcript_context_label.clone();
+            let transcript_context_word = Rc::clone(&transcript_context_word);
+            let transcript = transcript.clone();
+            let context_gesture = gtk::GestureClick::builder().button(3).build();
+            context_gesture.connect_pressed(move |_, _, x, y| {
+                let Some(word) = transcript.word_at_point(x, y) else {
+                    return;
+                };
+                *transcript_context_word.borrow_mut() = word.clone();
+                transcript_context_label.set_label(&format!("Word: {word}"));
+                let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                transcript_context.set_pointing_to(Some(&rect));
+                transcript_context.popup();
+            });
+            transcript_view.add_controller(context_gesture);
+        }
+
+        {
+            let transcript_context_word = Rc::clone(&transcript_context_word);
+            transcript_context_copy.connect_clicked(move |_| {
+                let word = transcript_context_word.borrow().trim().to_string();
+                if word.is_empty() {
+                    return;
+                }
+                if let Some(display) = gtk::gdk::Display::default() {
+                    display.clipboard().set_text(&word);
+                }
+            });
+        }
 
         {
             let model_info_popover = model_info_popover.clone();
