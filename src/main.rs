@@ -169,15 +169,19 @@ fn main() -> glib::ExitCode {
         let transcript = Transcript::new();
         let transcript_view = transcript.view();
 
-        let transcript_menu = gio::Menu::new();
-        transcript_menu.append(Some("Copy all"), Some("app.transcript_copy"));
-        transcript_menu.append(Some("Clear"), Some("app.transcript_clear"));
-
-        let transcript_menu_button = gtk::MenuButton::builder()
-            .icon_name("open-menu-symbolic")
-            .menu_model(&transcript_menu)
+        let transcript_copy_button = gtk::Button::builder()
+            .icon_name("edit-copy-symbolic")
+            .tooltip_text("Copy all")
+            .action_name("app.transcript_copy")
             .build();
-        transcript_menu_button.add_css_class("hud-control");
+        transcript_copy_button.add_css_class("hud-control");
+
+        let transcript_clear_button = gtk::Button::builder()
+            .icon_name("edit-clear-symbolic")
+            .tooltip_text("Clear")
+            .action_name("app.transcript_clear")
+            .build();
+        transcript_clear_button.add_css_class("hud-control");
 
         let transcript_header = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -191,7 +195,8 @@ fn main() -> glib::ExitCode {
             .build();
         transcript_title.add_css_class("hud-transcript-title");
         transcript_header.append(&transcript_title);
-        transcript_header.append(&transcript_menu_button);
+        transcript_header.append(&transcript_copy_button);
+        transcript_header.append(&transcript_clear_button);
 
         let transcript_scroll = gtk::ScrolledWindow::builder()
             .hexpand(true)
