@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,9 @@ pub enum AsrError {
     },
     EmptyTranscript {
         stderr: String,
+    },
+    JsonParse {
+        message: String,
     },
     ModelMissing {
         message: String,
@@ -48,6 +52,7 @@ impl fmt::Display for AsrError {
                     stderr.trim()
                 )
             }
+            Self::JsonParse { message } => write!(f, "whisper-cli JSON parse failed: {message}"),
             Self::ModelMissing {
                 message,
                 fix_command,
@@ -99,6 +104,91 @@ pub fn transcribe(
     }
 
     Ok(transcript)
+}
+
+#[derive(Clone, Debug)]
+pub struct ConfidenceSegment {
+    pub text: String,
+    pub tokens: Vec<(String, f32)>,
+}
+
+pub type ConfidenceSegments = Vec<ConfidenceSegment>;
+
+pub fn transcribe_with_confidence(
+    wav_path: impl AsRef<Path>,
+    model_path: impl AsRef<Path>,
+) -> Result<ConfidenceSegments, AsrError> {
+    let wav_path = wav_path.as_ref();
+    let model_path = model_path.as_ref();
+    let cli = resolve_whisper_cli();
+    let bin = cli.binary.to_string_lossy().into_owned();
+
+    let mut cmd = Command::new(&cli.binary);
+    if let Some(lib_dir) = cli.lib_dir {
+        let merged = merge_library_path(&lib_dir);
+        cmd.env("LD_LIBRARY_PATH", merged);
+    }
+    cmd.arg("-m")
+        .arg(model_path)
+        .arg("-f")
+        .arg(wav_path)
+        .args([
+            "-nt",
+            "--print-confidence",
+            "--output-json-full",
+            "--output-file",
+            "-",
+            "--no-prints",
+        ]);
+
+    let output = cmd
+        .output()
+        .map_err(|_| AsrError::WhisperCliNotFound(bin))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    if !output.status.success() {
+        return Err(AsrError::ProcessFailed {
+            code: output.status.code(),
+            stderr,
+            stdout,
+        });
+    }
+
+    let parsed: JsonTranscript = serde_json::from_str(stdout.trim())
+        .map_err(|err| AsrError::JsonParse { message: err.to_string() })?;
+    let segments = parsed
+        .transcription
+        .into_iter()
+        .map(|segment| ConfidenceSegment {
+            text: segment.text,
+            tokens: segment
+                .tokens
+                .into_iter()
+                .map(|token| (token.text, token.p))
+                .collect(),
+        })
+        .collect();
+
+    Ok(segments)
+}
+
+#[derive(Deserialize)]
+struct JsonTranscript {
+    transcription: Vec<JsonSegment>,
+}
+
+#[derive(Deserialize)]
+struct JsonSegment {
+    text: String,
+    #[serde(default)]
+    tokens: Vec<JsonToken>,
+}
+
+#[derive(Deserialize)]
+struct JsonToken {
+    text: String,
+    p: f32,
 }
 
 struct WhisperCliLocation {
