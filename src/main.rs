@@ -178,6 +178,30 @@ fn main() -> glib::ExitCode {
         let transcript = Transcript::new();
         let transcript_view = transcript.view();
 
+        let transcript_menu = gio::Menu::new();
+        transcript_menu.append(Some("Copy all"), Some("app.transcript_copy"));
+        transcript_menu.append(Some("Clear"), Some("app.transcript_clear"));
+
+        let transcript_menu_button = gtk::MenuButton::builder()
+            .icon_name("open-menu-symbolic")
+            .menu_model(&transcript_menu)
+            .build();
+        transcript_menu_button.add_css_class("hud-control");
+
+        let transcript_header = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(6)
+            .build();
+        transcript_header.add_css_class("hud-transcript-header");
+        let transcript_title = gtk::Label::builder()
+            .label("Transcript")
+            .xalign(0.0)
+            .hexpand(true)
+            .build();
+        transcript_title.add_css_class("hud-transcript-title");
+        transcript_header.append(&transcript_title);
+        transcript_header.append(&transcript_menu_button);
+
         let transcript_scroll = gtk::ScrolledWindow::builder()
             .hexpand(true)
             .vexpand(true)
@@ -186,6 +210,7 @@ fn main() -> glib::ExitCode {
         transcript_scroll.add_css_class("hud-transcript-scroll");
 
         panel.append(&top_bar);
+        panel.append(&transcript_header);
         panel.append(&transcript_scroll);
 
         {
@@ -300,6 +325,27 @@ fn main() -> glib::ExitCode {
                 match result {
                     Ok(ref path) => apply_model_indicator(&model_label, Some(path), None),
                     Err(err) => apply_model_indicator(&model_label, None, Some(err.to_string())),
+                }
+            });
+            app.add_action(&action);
+        }
+
+        {
+            let transcript = transcript.clone();
+            let action = gio::SimpleAction::new("transcript_clear", None);
+            action.connect_activate(move |_, _| {
+                transcript.clear();
+            });
+            app.add_action(&action);
+        }
+
+        {
+            let transcript = transcript.clone();
+            let action = gio::SimpleAction::new("transcript_copy", None);
+            action.connect_activate(move |_, _| {
+                let text = transcript.text();
+                if let Some(display) = gtk::gdk::Display::default() {
+                    display.clipboard().set_text(&text);
                 }
             });
             app.add_action(&action);

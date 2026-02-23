@@ -81,6 +81,17 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.hud-transcript-header {
+  margin-top: 2px;
+}
+
+.hud-transcript-title {
+  color: #c3d0e2;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .hud-transcript {
   background: transparent;
   color: #e6edf7;

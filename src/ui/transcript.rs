@@ -48,6 +48,12 @@ impl Transcript {
         self.buffer.set_text("");
     }
 
+    pub fn text(&self) -> String {
+        let start = self.buffer.start_iter();
+        let end = self.buffer.end_iter();
+        self.buffer.text(&start, &end, true).to_string()
+    }
+
     fn append_text(&self, text: &str) {
         let mut iter = self.buffer.end_iter();
         self.buffer.insert(&mut iter, text);
